@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Material Icons Outlined Integration */
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  display: inline-block;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  white-space: nowrap;
+  direction: ltr;
+}
+
+.cozy-shadow {
+  box-shadow: 0 20px 25px -5px rgba(62, 0, 12, 0.04), 0 10px 10px -5px rgba(62, 0, 12, 0.02);
+}
+
+.soft-shadow {
+  box-shadow: 0 4px 20px -4px rgba(62, 0, 12, 0.04);
+}
+
+.soft-shadow-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.soft-shadow-hover:hover {
+  box-shadow: 0 8px 30px -4px rgba(62, 0, 12, 0.08);
+  transform: translateY(-4px);
+}
+
+.carrot-progress {
+  background: linear-gradient(90deg, #fd9b65 0%, #95491a 100%);
+}
+
+.glass-nav {
+  background: rgba(255, 248, 243, 0.85);
+  backdrop-filter: blur(12px);
+}
+
