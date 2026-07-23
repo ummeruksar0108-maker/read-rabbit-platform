@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Layers, BookOpen, Settings, HelpCircle, LogOut, ShieldCheck, RefreshCw, Sparkles } from "lucide-react";
+import { Logo } from "./Logo";
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   selectedCourseName: string | null;
   onChangeCourse: () => void;
-  onStartSession: () => void;
   isAdmin: boolean;
   onSecretTrigger?: () => void;
 }
@@ -16,7 +16,6 @@ export default function Sidebar({
   setActiveTab,
   selectedCourseName,
   onChangeCourse,
-  onStartSession,
   isAdmin,
   onSecretTrigger,
 }: SidebarProps) {
@@ -50,15 +49,10 @@ export default function Sidebar({
         <div className="px-6 mb-8 flex flex-col items-center text-center space-y-3">
           <div 
             onClick={handleLogoClick}
-            className="w-16 h-16 rounded-xl overflow-hidden border border-[#40010d]/15 bg-white shadow-sm hover:scale-105 transition-transform duration-250 cursor-pointer"
+            className="hover:scale-105 transition-transform duration-250 cursor-pointer"
             title="Read Rabbit Logo"
           >
-            <img
-              alt="Read Rabbit Logo"
-              src="/src/assets/images/logo.png"
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+            <Logo size="md" />
           </div>
           <div>
             <h2 className="font-sans text-lg font-extrabold tracking-tight text-[#40010d]">
@@ -118,14 +112,6 @@ export default function Sidebar({
       </div>
 
       <div className="px-2 space-y-1">
-        <button
-          onClick={onStartSession}
-          className="w-[calc(100%-16px)] mx-2 mb-4 bg-[#40010d] text-white py-3 rounded-xl font-sans font-semibold text-xs hover:bg-[#7a2c35] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-        >
-          <Sparkles size={14} className="text-[#fd9b65]" />
-          Talk with Bunny Tutor
-        </button>
-
         <button
           onClick={() => setActiveTab("help")}
           className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${

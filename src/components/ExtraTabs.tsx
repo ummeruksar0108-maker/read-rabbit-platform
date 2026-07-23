@@ -94,7 +94,7 @@ export default function ExtraTabs({
               </p>
             </div>
             <button
-              onClick={() => alert("Interview blueprints are generating! Ask Bunny Tutor inside any Subject Hub for hints.")}
+              onClick={() => alert("Interview blueprints are generating! Check back soon for updated career guides.")}
               className="mt-6 w-full py-2.5 bg-[#40010d] hover:bg-[#7a2c35] text-white text-xs font-bold rounded-xl transition-colors cursor-pointer text-center"
             >
               Browse Blueprint

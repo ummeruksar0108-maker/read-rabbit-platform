@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { BookOpen, Award, Zap, ArrowRight, Compass } from "lucide-react";
+import { Logo } from "./Logo";
 
 interface SplashProps {
   onEnter: () => void;
@@ -33,13 +34,8 @@ export default function Splash({ onEnter }: SplashProps) {
         <div className="relative mb-8 flex justify-center items-center">
           <div className="absolute -inset-6 bg-[#fd9b65]/10 rounded-full blur-xl animate-pulse"></div>
           {/* Stylized Rabbit Logo Card */}
-          <div className="w-40 h-40 rounded-3xl shadow-lg bg-white flex items-center justify-center border-4 border-[#40010d]/10 overflow-hidden transform hover:scale-105 transition-all duration-300">
-            <img
-              alt="Read Rabbit Logo"
-              src="/src/assets/images/logo.png"
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+          <div className="transform hover:scale-105 transition-all duration-300">
+            <Logo size="xl" className="shadow-lg border-4 border-[#40010d]/10" />
           </div>
         </div>
 
@@ -75,9 +71,13 @@ export default function Splash({ onEnter }: SplashProps) {
         transition={{ duration: 0.8, ease: "easeOut" }}
         className="max-w-3xl text-center z-10 flex flex-col items-center px-4"
       >
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#f8e6cb] text-[#753101] mb-8 shadow-xs border border-[#dac1c1]/20">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#f8e6cb] text-[#753101] mb-6 shadow-xs border border-[#dac1c1]/20">
           <Compass size={16} className="text-[#95491a]" />
-          <span className="text-xs font-sans font-bold tracking-wider uppercase">Curated Study Guides</span>
+          <span className="text-xs font-sans font-bold tracking-wider uppercase">Curated Academic Guides</span>
+        </div>
+
+        <div className="mb-6 transform hover:scale-105 transition-all duration-300">
+          <Logo size="lg" className="shadow-md border-2 border-[#40010d]/10" />
         </div>
 
         <h2 className="font-sans text-4xl md:text-6xl font-extrabold text-[#40010d] mb-4 tracking-tight leading-tight">

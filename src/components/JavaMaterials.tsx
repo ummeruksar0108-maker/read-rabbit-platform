@@ -70,8 +70,8 @@ export default function JavaMaterials({
         setConsoleOutput((prev) => [
           ...prev,
           "Output:",
-          "Bunny Tutor studied inside the Burrow for 1 hours! 🥕",
-          "Bunny Tutor studied inside the Burrow for 2 hours! 🥕",
+          "Read Rabbit studied inside the Burrow for 1 hours! 🥕",
+          "Read Rabbit studied inside the Burrow for 2 hours! 🥕",
           "--------------------------------",
           "Execution completed successfully."
         ]);
@@ -367,7 +367,7 @@ export default function JavaMaterials({
                 <div className="p-4 bg-white rounded-xl border border-[#dac1c1]/40">
                   <p className="font-sans text-sm font-bold text-[#40010d]">Q1: Explain Class vs Object with an example.</p>
                   <p className="font-sans text-xs text-[#544243] mt-2 leading-relaxed">
-                    A Class is a blueprint or template from which objects are created. An Object is an instance of a class. Example: Class 'Rabbit' defines attributes (name, age), while object 'Bunny Tutor' is a specific rabbit with name="Bunny Tutor" and age=2.
+                    A Class is a blueprint or template from which objects are created. An Object is an instance of a class. Example: Class 'Rabbit' defines attributes (name, age), while object 'rabbit1' is a specific rabbit with name="Read Rabbit" and age=2.
                   </p>
                 </div>
 

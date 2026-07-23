@@ -12,8 +12,8 @@ import CuratedSubjects from "./components/CuratedSubjects";
 import SubjectHub from "./components/SubjectHub";
 import ExtraTabs from "./components/ExtraTabs";
 import AdminPortal from "./components/AdminPortal";
-import AITutorModal from "./components/AITutorModal";
 import AddSubjectModal from "./components/AddSubjectModal";
+import { Logo } from "./components/Logo";
 
 // Icons for Responsive Top Bar
 import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft } from "lucide-react";
@@ -57,7 +57,6 @@ export default function App() {
   });
 
   // Modal control states
-  const [isAITutorOpen, setIsAITutorOpen] = useState(false);
   const [isAddSubjectOpen, setIsAddSubjectOpen] = useState(false);
 
   // Student Profile Info
@@ -370,13 +369,6 @@ export default function App() {
     }));
   };
 
-  // Prompt context for Bunny Tutor general chat modal
-  const getTopicContext = () => {
-    if (activeSubject) return `Mastering "${activeSubject.name}" in Course: ${activeCourse?.name}, Semester: ${activeSemester?.name}`;
-    if (activeSemester) return `Academic Syllabus and core subjects for Semester: ${activeSemester.name}`;
-    return `Undergraduate BCA curriculum, notes, and study strategy`;
-  };
-
   // Exit App handler (Splash trigger)
   const handleExitApp = () => {
     setIsSplash(true);
@@ -436,7 +428,6 @@ export default function App() {
         }}
         selectedCourseName={activeCourse?.name || null}
         onChangeCourse={handleChangeCourseClick}
-        onStartSession={() => setIsAITutorOpen(true)}
         isAdmin={isAdmin}
         onSecretTrigger={handleSecretAdminTrigger}
       />
@@ -465,9 +456,12 @@ export default function App() {
               </button>
             )}
             
-            <h1 className="font-sans text-lg font-extrabold text-[#40010d] md:hidden">
-              READ RABBIT
-            </h1>
+            <div className="flex items-center gap-2 md:hidden">
+              <Logo size="sm" />
+              <h1 className="font-sans text-base font-extrabold text-[#40010d]">
+                READ RABBIT
+              </h1>
+            </div>
             
             {/* Desktop Quick Header indicator */}
             <div className="hidden md:flex items-center gap-2 text-xs font-sans font-semibold text-[#877272]">
@@ -482,14 +476,9 @@ export default function App() {
               <Search size={16} className="text-[#877272]" />
               <input
                 type="text"
-                placeholder="Ask rabbit syllabus questions..."
+                placeholder="Search syllabus & notes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && searchQuery.trim() !== "") {
-                    setIsAITutorOpen(true);
-                  }
-                }}
                 className="bg-transparent border-none text-xs font-sans focus:outline-none placeholder-[#877272] w-44"
               />
             </div>
@@ -619,7 +608,10 @@ export default function App() {
               >
                 <div>
                   <div className="flex justify-between items-center mb-8">
-                    <h2 className="font-sans text-xl font-bold text-[#40010d]">READ RABBIT</h2>
+                    <div className="flex items-center gap-2">
+                      <Logo size="sm" />
+                      <h2 className="font-sans text-lg font-bold text-[#40010d]">READ RABBIT</h2>
+                    </div>
                     <button onClick={() => setMobileMenuOpen(false)}>
                       <X size={20} className="text-[#877272]" />
                     </button>
@@ -680,16 +672,6 @@ export default function App() {
                 <div className="space-y-2">
                   <button
                     onClick={() => {
-                      setIsAITutorOpen(true);
-                      setMobileMenuOpen(false);
-                    }}
-                    className="w-full bg-[#40010d] text-white py-3 rounded-xl font-sans font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Sparkles size={14} className="text-[#fd9b65]" /> Talk with Bunny Tutor
-                  </button>
-
-                  <button
-                    onClick={() => {
                       setActiveTab("help");
                       setMobileMenuOpen(false);
                     }}
@@ -740,7 +722,7 @@ export default function App() {
             />
           )}
 
-          {/* INTERACTIVE DYNAMIC SUBJECT HUB (Syllabus, Study materials, Practicals, and Coach Chat) */}
+          {/* INTERACTIVE DYNAMIC SUBJECT HUB (Syllabus, Study materials, Practicals) */}
           {activeTab === "units" && activeSubject !== null && (
             <SubjectHub
               courseName={activeCourse?.name || ""}
@@ -752,9 +734,6 @@ export default function App() {
                 setActiveTab("subjects");
               }}
               onUpdateSubject={handleUpdateSubject}
-              onStartAITutor={(topic) => {
-                setIsAITutorOpen(true);
-              }}
             />
           )}
 
@@ -793,11 +772,8 @@ export default function App() {
             <div className="p-8 max-w-lg mx-auto text-center font-sans mt-12 bg-white rounded-3xl border border-[#dac1c1]/20">
               <h3 className="text-2xl font-extrabold text-[#40010d] mb-3">Academic Burrow Assistance</h3>
               <p className="text-sm text-[#544243] leading-relaxed mb-6">
-                Need guidance navigating your spec's modules or assembly practicals? Bunny Tutor is always available inside any Subject Hub to detail solved papers, algorithms, and micro-circuit structures!
+                Need guidance navigating your spec's modules or assembly practicals? Explore the Syllabus Units and Study Files inside any Subject Hub to access notes, solved papers, and algorithms!
               </p>
-              <button onClick={() => setIsAITutorOpen(true)} className="px-6 py-3 bg-[#fd9b65] text-[#341100] font-extrabold text-xs rounded-xl hover:bg-orange-400 transition-colors cursor-pointer">
-                Talk to Bunny Tutor Coach
-              </button>
             </div>
           )}
 
@@ -820,26 +796,6 @@ export default function App() {
           )}
         </main>
       </div>
-
-      {/* Responsive Floating Chat assistant button */}
-      <button
-        onClick={() => setIsAITutorOpen(true)}
-        className="md:hidden fixed bottom-6 right-6性能 z-40 w-14 h-14 bg-[#40010d] text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
-        title="Start AI Session"
-      >
-        <Sparkles size={24} className="text-[#fd9b65]" />
-      </button>
-
-      {/* Bunny Tutor AI general coach chat overlay modal */}
-      <AnimatePresence>
-        {isAITutorOpen && (
-          <AITutorModal
-            isOpen={isAITutorOpen}
-            onClose={() => setIsAITutorOpen(false)}
-            currentTopic={getTopicContext()}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Custom Subject creation modal inside Semester subjects view */}
       <AnimatePresence>

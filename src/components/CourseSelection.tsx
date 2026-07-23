@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { Course } from "../types";
 import { Brain, Database, BookOpen, ShieldCheck } from "lucide-react";
+import { Logo } from "./Logo";
 
 interface CourseSelectionProps {
   courses: Course[];
@@ -45,15 +46,10 @@ export default function CourseSelection({
         <div className="flex flex-col items-center space-y-3">
           <div 
             onClick={handleLogoClick}
-            className="w-28 h-28 rounded-2xl overflow-hidden border-2 border-[#40010d]/15 bg-white shadow-md hover:scale-105 transition-transform duration-300 cursor-pointer"
+            className="hover:scale-105 transition-transform duration-300 cursor-pointer"
             title="Read Rabbit Logo"
           >
-            <img
-              alt="Read Rabbit Logo"
-              src="/src/assets/images/logo.png"
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+            <Logo size="lg" className="border-2 shadow-md" />
           </div>
           <div>
             <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-[#40010d] tracking-tight">

@@ -32,7 +32,6 @@ interface SubjectHubProps {
   isAdmin: boolean;
   onBackToSubjects: () => void;
   onUpdateSubject: (updatedSubject: Subject) => void;
-  onStartAITutor: (topic: string) => void;
 }
 
 export default function SubjectHub({
@@ -42,9 +41,8 @@ export default function SubjectHub({
   isAdmin,
   onBackToSubjects,
   onUpdateSubject,
-  onStartAITutor,
 }: SubjectHubProps) {
-  const [activeTab, setActiveTab] = useState<"syllabus" | "materials" | "tutor" | "quiz">("syllabus");
+  const [activeTab, setActiveTab] = useState<"syllabus" | "materials" | "quiz">("syllabus");
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
 
   // Material Details modal
@@ -56,13 +54,6 @@ export default function SubjectHub({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [quizScore, setQuizScore] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
-
-  // In-Hub Chat with Bunny Tutor state
-  const [chatMessages, setChatMessages] = useState<{ id: string; role: "user" | "model"; text: string }[]>([
-    { id: "1", role: "model", text: `Hi! I'm Bunny Tutor, your burrow study coach. Let's master "${subject.name}" together! Ask me anything about its syllabus units, coding examples, or practicals.` }
-  ]);
-  const [isChatLoading, setIsChatLoading] = useState(false);
-  const [inputText, setInputText] = useState("");
 
   // Admin File & Notes Upload / Management State
   const [isDragging, setIsDragging] = useState(false);
@@ -258,45 +249,6 @@ export default function SubjectHub({
     ];
   }, [subject]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || isChatLoading) return;
-
-    const userMsg = { id: Date.now().toString(), role: "user" as const, text: inputText };
-    setChatMessages(prev => [...prev, userMsg]);
-    setInputText("");
-    setIsChatLoading(true);
-
-    try {
-      const chatHistory = [...chatMessages, userMsg].map((msg) => ({
-        role: msg.role,
-        text: msg.text,
-      }));
-
-      const res = await fetch("/api/gemini/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: chatHistory,
-          currentTopic: `${subject.name} - Syllabus Unit Concept`,
-        }),
-      });
-
-      const data = await res.json();
-      
-      const coachReply = data.text || `I apologize, little study companion. My thoughts got lost in the clover fields. Could you please try again?`;
-      setChatMessages(prev => [...prev, { id: Date.now().toString(), role: "model" as const, text: coachReply }]);
-    } catch (err) {
-      console.error(err);
-      const coachReply = `My apologies! It seems a small draft has disconnected our tunnel. Let's try chatting again shortly! 🐾`;
-      setChatMessages(prev => [...prev, { id: Date.now().toString(), role: "model" as const, text: coachReply }]);
-    } finally {
-      setIsChatLoading(false);
-    }
-  };
-
   const handleAnswerSubmit = (optionIndex: number) => {
     if (selectedOption !== null) return;
     setSelectedOption(optionIndex);
@@ -410,7 +362,6 @@ export default function SubjectHub({
         {[
           { id: "syllabus", label: "Syllabus Units", count: subject.units.length },
           { id: "materials", label: "Study Files", count: subject.materials?.length || 0 },
-          { id: "tutor", label: "AI Coach Chat", icon: Sparkles },
           { id: "quiz", label: "Practice Sprint", icon: Award }
         ].map(tab => {
           const isActive = activeTab === tab.id;
@@ -662,16 +613,6 @@ export default function SubjectHub({
                     <span className="text-[#877272] flex items-center gap-1">
                       <Clock size={12} /> {selectedUnit?.id === unit.id ? "Click card to collapse details" : "Click card to expand details"}
                     </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveTab("tutor");
-                        setInputText(`Can you explain ${unit.name} in simple words?`);
-                      }}
-                      className="text-[#95491a] hover:underline flex items-center gap-1"
-                    >
-                      Ask AI Tutor <Sparkles size={11} />
-                    </button>
                   </div>
                 </div>
               );
@@ -867,100 +808,6 @@ export default function SubjectHub({
                 })}
               </div>
             )}
-          </div>
-        )}
-
-        {/* AI COACH BARNABY CHAT */}
-        {activeTab === "tutor" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-5xl mx-auto">
-            {/* Quick reference sidebar */}
-            <div className="lg:col-span-4 bg-white p-5 rounded-3xl border border-[#dac1c1]/20 space-y-4 shadow-xs h-fit">
-              <h4 className="font-bold text-xs text-[#40010d] tracking-wider uppercase flex items-center gap-1.5">
-                <Sparkles size={14} className="text-[#95491a]" /> Smart Prompts
-              </h4>
-              <p className="text-[11px] text-[#544243] leading-relaxed">
-                Click any prompt below to ask Bunny Tutor, your specialized syllabus coach, for quick answers:
-              </p>
-              
-              <div className="space-y-2">
-                {[
-                  `Explain Unit 1 core theorems simply`,
-                  `What are the most expected exam questions?`,
-                  `Give me a study plan for this subject`,
-                  `Show me a simple C/Python practical demo`
-                ].map((prompt, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setInputText(prompt)}
-                    className="w-full text-left p-2.5 rounded-xl bg-[#fff8f3] border border-[#dac1c1]/20 hover:border-[#fd9b65] hover:bg-[#fff2e1]/30 transition-all text-xs text-[#544243] leading-relaxed cursor-pointer font-medium"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Chat Pane */}
-            <div className="lg:col-span-8 bg-white rounded-3xl border border-[#dac1c1]/20 shadow-xs flex flex-col min-h-[400px] overflow-hidden">
-              <div className="p-4 bg-[#fff2e1]/60 border-b border-[#dac1c1]/20 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-[#f8e6cb] flex items-center justify-center font-bold text-xs text-[#95491a]">
-                    B
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-xs text-[#40010d]">Bunny Tutor AI Syllabus Coach</h4>
-                    <span className="text-[9px] text-[#6b8a80] font-bold">Online • Expert on {subject.name}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Chat message logs */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-4 max-h-[300px]">
-                {chatMessages.map(msg => {
-                  const isModel = msg.role === "model";
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex gap-3 max-w-[85%] ${isModel ? "" : "ml-auto flex-row-reverse"}`}
-                    >
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shadow-xs ${
-                        isModel ? "bg-[#f8e6cb] text-[#95491a]" : "bg-[#40010d] text-white"
-                      }`}>
-                        {isModel ? "B" : "S"}
-                      </div>
-                      <div className={`p-3 rounded-2xl text-xs leading-relaxed ${
-                        isModel ? "bg-[#fff8f3] text-[#231a0a] border border-[#dac1c1]/15" : "bg-[#40010d] text-white"
-                      }`}>
-                        {msg.text}
-                      </div>
-                    </div>
-                  );
-                })}
-                {isChatLoading && (
-                  <div className="flex gap-3 max-w-[80%] items-center text-xs text-[#877272] italic font-medium">
-                    <RefreshCw size={12} className="animate-spin" /> Bunny Tutor is thinking...
-                  </div>
-                )}
-              </div>
-
-              {/* Chat input form */}
-              <form onSubmit={handleSendMessage} className="p-3 border-t border-[#dac1c1]/20 bg-[#fffcf9] flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Ask a syllabus question (e.g. explain Euler Paths)..."
-                  value={inputText}
-                  onChange={e => setInputText(e.target.value)}
-                  className="flex-1 bg-white border border-[#dac1c1] focus:border-[#fd9b65] rounded-xl px-4 py-2.5 text-xs focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={isChatLoading}
-                  className="px-4 py-2 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-xl font-bold text-xs cursor-pointer flex items-center gap-1 transition-colors"
-                >
-                  Ask <Sparkles size={12} />
-                </button>
-              </form>
-            </div>
           </div>
         )}
 

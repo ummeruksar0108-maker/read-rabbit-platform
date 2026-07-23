@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Unit } from "../types";
 import { ChevronRight, Code, Award, Users, BookOpenCheck, Lock, Play, RefreshCw, X } from "lucide-react";
+import { Logo } from "./Logo";
 
 interface JavaUnitsProps {
   units: Unit[];
@@ -119,12 +120,8 @@ export default function JavaUnits({ units, onSelectUnit, onSelectBreadcrumb }: J
           </div>
         </div>
 
-        <div className="relative z-10 w-full md:w-1/3 aspect-video md:aspect-square bg-[#f3e0c5] rounded-2xl overflow-hidden shadow-sm">
-          <img
-            alt="Study desk"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAzy_c4Lxohi3BGBtPchDL3ghGkLEO373Zhqn7l-DE8ynkJlgiU9YiCSVDNt0xLMmTbDoDA2kG1aUTGyfaiHed5UDXyQ8fmCDofb2WAqKn9R26YEyCqLEauZOFueluPe1B4NJutX_sPNZt3CHK_OtcJVi_9LbZ5hwjZQ7qShvGk9vST1zW1qcOBWWuehBuf8p2jM4Z7GS9AV0sqQx-JLPKFkbDo2iZEZ2WpsJa9-SLyHJSrj6e-7Wiz_mg5yMkhuJZTMnZ6s0pV4e0i"
-            className="w-full h-full object-cover"
-          />
+        <div className="relative z-10 w-full md:w-1/3 aspect-video md:aspect-square rounded-2xl overflow-hidden shadow-sm flex items-center justify-center">
+          <Logo size="custom" className="w-full h-full rounded-2xl border-2 border-[#40010d]/10" />
         </div>
       </section>
 
