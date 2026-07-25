@@ -22,7 +22,12 @@ import {
   RefreshCw,
   Plus,
   Trash2,
-  Upload
+  Upload,
+  Download,
+  Eye,
+  Copy,
+  Check,
+  ExternalLink
 } from "lucide-react";
 
 interface SubjectHubProps {
@@ -47,6 +52,35 @@ export default function SubjectHub({
 
   // Material Details modal
   const [activeMaterial, setActiveMaterial] = useState<StudyMaterial | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Download File Helper
+  const handleDownloadFile = (material: StudyMaterial) => {
+    try {
+      const link = document.createElement("a");
+      link.download = material.name;
+      if (material.details && material.details.startsWith("data:")) {
+        link.href = material.details;
+      } else {
+        const blob = new Blob([material.details || ""], { type: "text/plain;charset=utf-8" });
+        link.href = URL.createObjectURL(blob);
+      }
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to download file:", err);
+      alert(`Could not trigger automated download for "${material.name}".`);
+    }
+  };
+
+  // Copy Content Helper
+  const handleCopyContent = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   // Practice Quiz / Flashcard State
   const [isPlayingQuiz, setIsPlayingQuiz] = useState(false);
@@ -450,163 +484,178 @@ export default function SubjectHub({
                     </div>
                   )}
 
-                  {/* Expanded unit materials list */}
-                  {selectedUnit?.id === unit.id && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-3" onClick={(e) => e.stopPropagation()}>
-                      <span className="text-[10px] font-extrabold text-[#95491a] tracking-wider uppercase block">
-                        📂 Unit Study Materials & PDFs ({(unit.materials || []).length}):
+                  {/* Unit Materials Preview & Direct Tile Access */}
+                  <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-extrabold text-[#95491a] tracking-wider uppercase flex items-center gap-1">
+                        📂 Attached Unit Files ({(unit.materials || []).length}):
                       </span>
-                      {(!unit.materials || unit.materials.length === 0) ? (
-                        <p className="text-[11px] text-[#877272] italic bg-[#fff8f3] p-3 rounded-xl border border-[#dac1c1]/20">
-                          No customized files attached to this unit yet.
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          {unit.materials.map((m) => {
-                            const isCode = m.type === "code";
-                            return (
-                              <div 
-                                key={m.id}
-                                className="p-3 bg-[#fff8f3]/60 hover:bg-[#fff2e1]/40 rounded-xl border border-[#dac1c1]/25 flex justify-between items-center transition-colors"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                                    m.type === "pdf" ? "bg-red-50 text-red-600" : isCode ? "bg-blue-50 text-blue-600" : "bg-yellow-50 text-yellow-700"
-                                  }`}>
-                                    {isCode ? <Terminal size={14} /> : <FileText size={14} />}
-                                  </div>
-                                  <div className="text-left">
-                                    <h5 className="font-bold text-xs text-[#40010d] line-clamp-1">{m.name}</h5>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">{m.size} • Study Reference</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                  <button 
-                                    onClick={() => setActiveMaterial(m)}
-                                    className="px-3 py-1.5 bg-[#f8e6cb]/60 hover:bg-[#fd9b65] text-[#95491a] hover:text-[#341100] rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                                  >
-                                    {isCode ? "View Code" : "View Notes"}
-                                  </button>
-                                  {isAdmin && (
-                                    <button
-                                      onClick={() => handleDeleteUnitMaterial(unit.id, m.id)}
-                                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
-                                      title="Delete File Permanently"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {isAdmin && (
-                        <div className="mt-4 p-4 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-3 text-left">
-                          <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
-                            ➕ Quick Attach File or Notes to Unit {unit.number}
-                          </span>
-                          
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setAdminUploadMode("file")}
-                              className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                                adminUploadMode === "file" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
-                              }`}
-                            >
-                              Upload File
-                            </button>
-                            <button
-                              onClick={() => setAdminUploadMode("write")}
-                              className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                                adminUploadMode === "write" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
-                              }`}
-                            >
-                              Write Notes
-                            </button>
-                          </div>
-
-                          {uploadSuccess && (
-                            <p className="p-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-lg animate-fade-in">
-                              {uploadSuccess}
-                            </p>
-                          )}
-                          {uploadError && (
-                            <p className="p-2 bg-red-50 text-red-800 text-[10px] font-bold rounded-lg animate-fade-in">
-                              {uploadError}
-                            </p>
-                          )}
-
-                          {adminUploadMode === "file" ? (
-                            <div
-                              onDragOver={onDragOver}
-                              onDragLeave={onDragLeave}
-                              onDrop={(e) => onDrop(e, unit.id)}
-                              className={`border border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
-                                isDragging ? "border-[#95491a] bg-[#fff8f3]" : "border-[#dac1c1]/45 hover:border-[#fd9b65] bg-white"
-                              }`}
-                            >
-                              <input
-                                type="file"
-                                id={`admin-unit-file-input-${unit.id}`}
-                                className="hidden"
-                                onChange={(e) => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    handleProcessFile(e.target.files[0], unit.id);
-                                  }
-                                }}
-                              />
-                              <label htmlFor={`admin-unit-file-input-${unit.id}`} className="cursor-pointer space-y-1 block">
-                                <Upload size={18} className="text-[#95491a] mx-auto" />
-                                <div className="text-[10px] text-[#544243]">
-                                  Drag & Drop or <span className="text-[#95491a] font-bold underline">click to browse</span>
-                                </div>
-                              </label>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <div className="grid grid-cols-2 gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Notes Title (e.g. Unit Notes)"
-                                  value={adminNoteTitle}
-                                  onChange={(e) => setAdminNoteTitle(e.target.value)}
-                                  className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none"
-                                />
-                                <select
-                                  value={adminNoteType}
-                                  onChange={(e) => setAdminNoteType(e.target.value as any)}
-                                  className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2 py-1.5 text-[10px] focus:outline-none"
-                                >
-                                  <option value="pdf">Document / PDF</option>
-                                  <option value="code">Code Snippet</option>
-                                  <option value="question">Question Bank</option>
-                                </select>
-                              </div>
-                              <textarea
-                                rows={2}
-                                placeholder="Enter notes content or paste code..."
-                                value={adminNoteContent}
-                                onChange={(e) => setAdminNoteContent(e.target.value)}
-                                className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg p-2 text-[10px] focus:outline-none font-sans"
-                              />
-                              <div className="flex justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => handleCreateWrittenNote(unit.id)}
-                                  className="px-3 py-1 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[9px] font-bold cursor-pointer transition-colors"
-                                >
-                                  Save to Unit
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <span className="text-[10px] text-[#95491a] font-bold hover:underline">
+                        {selectedUnit?.id === unit.id ? "Click to Collapse" : "Click to Manage"}
+                      </span>
                     </div>
-                  )}
+
+                    {(!unit.materials || unit.materials.length === 0) ? (
+                      <p className="text-[11px] text-[#877272] italic bg-[#fff8f3] p-3 rounded-xl border border-[#dac1c1]/20 text-left">
+                        No customized files attached to this unit yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {unit.materials.map((m) => {
+                          const isCode = m.type === "code";
+                          const isPdf = m.type === "pdf" || m.name.toLowerCase().endsWith(".pdf");
+                          return (
+                            <div 
+                              key={m.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMaterial(m);
+                              }}
+                              className="p-3 bg-[#fff8f3]/80 hover:bg-[#ffebd6] rounded-xl border border-[#dac1c1]/30 flex justify-between items-center transition-all cursor-pointer group/file"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                  isPdf ? "bg-red-100 text-red-600" : isCode ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-700"
+                                }`}>
+                                  {isCode ? <Terminal size={14} /> : <FileText size={14} />}
+                                </div>
+                                <div className="text-left min-w-0">
+                                  <h5 className="font-bold text-xs text-[#40010d] truncate group-hover/file:text-[#95491a]">
+                                    {m.name}
+                                  </h5>
+                                  <p className="text-[10px] text-gray-500 mt-0.5">
+                                    {m.size} • Tap to view in-app
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button 
+                                  onClick={() => setActiveMaterial(m)}
+                                  className="px-3 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
+                                >
+                                  <Eye size={12} />
+                                  {isPdf ? "View PDF" : isCode ? "View Code" : "View Notes"}
+                                </button>
+                                {isAdmin && selectedUnit?.id === unit.id && (
+                                  <button
+                                    onClick={() => handleDeleteUnitMaterial(unit.id, m.id)}
+                                    className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                                    title="Delete File Permanently"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Admin Upload Panel when unit is expanded */}
+                    {selectedUnit?.id === unit.id && isAdmin && (
+                      <div className="mt-4 p-4 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-3 text-left" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
+                          ➕ Quick Attach File or Notes to Unit {unit.number}
+                        </span>
+                        
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setAdminUploadMode("file")}
+                            className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                              adminUploadMode === "file" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
+                            }`}
+                          >
+                            Upload File
+                          </button>
+                          <button
+                            onClick={() => setAdminUploadMode("write")}
+                            className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                              adminUploadMode === "write" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
+                            }`}
+                          >
+                            Write Notes
+                          </button>
+                        </div>
+
+                        {uploadSuccess && (
+                          <p className="p-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-lg animate-fade-in">
+                            {uploadSuccess}
+                          </p>
+                        )}
+                        {uploadError && (
+                          <p className="p-2 bg-red-50 text-red-800 text-[10px] font-bold rounded-lg animate-fade-in">
+                            {uploadError}
+                          </p>
+                        )}
+
+                        {adminUploadMode === "file" ? (
+                          <div
+                            onDragOver={onDragOver}
+                            onDragLeave={onDragLeave}
+                            onDrop={(e) => onDrop(e, unit.id)}
+                            className={`border border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
+                              isDragging ? "border-[#95491a] bg-[#fff8f3]" : "border-[#dac1c1]/45 hover:border-[#fd9b65] bg-white"
+                            }`}
+                          >
+                            <input
+                              type="file"
+                              id={`admin-unit-file-input-${unit.id}`}
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  handleProcessFile(e.target.files[0], unit.id);
+                                }
+                              }}
+                            />
+                            <label htmlFor={`admin-unit-file-input-${unit.id}`} className="cursor-pointer space-y-1 block">
+                              <Upload size={18} className="text-[#95491a] mx-auto" />
+                              <div className="text-[10px] text-[#544243]">
+                                Drag & Drop or <span className="text-[#95491a] font-bold underline">click to browse</span>
+                              </div>
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                type="text"
+                                placeholder="Notes Title (e.g. Unit Notes)"
+                                value={adminNoteTitle}
+                                onChange={(e) => setAdminNoteTitle(e.target.value)}
+                                className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none"
+                              />
+                              <select
+                                value={adminNoteType}
+                                onChange={(e) => setAdminNoteType(e.target.value as any)}
+                                className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2 py-1.5 text-[10px] focus:outline-none"
+                              >
+                                <option value="pdf">Document / PDF</option>
+                                <option value="code">Code Snippet</option>
+                                <option value="question">Question Bank</option>
+                              </select>
+                            </div>
+                            <textarea
+                              rows={2}
+                              placeholder="Enter notes content or paste code..."
+                              value={adminNoteContent}
+                              onChange={(e) => setAdminNoteContent(e.target.value)}
+                              className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg p-2 text-[10px] focus:outline-none font-sans"
+                            />
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleCreateWrittenNote(unit.id)}
+                                className="px-3 py-1 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[9px] font-bold cursor-pointer transition-colors"
+                              >
+                                Save to Unit
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Quick study material trigger inside card */}
                   <div className="flex items-center justify-between pt-4 mt-4 border-t border-dashed border-gray-100 text-[10px] font-bold">
@@ -789,9 +838,10 @@ export default function SubjectHub({
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         <button 
                           onClick={() => setActiveMaterial(material)}
-                          className="px-3 py-1.5 bg-[#f8e6cb]/50 hover:bg-[#fd9b65] text-[#95491a] hover:text-[#341100] rounded-xl text-[10px] font-bold transition-all cursor-pointer"
+                          className="px-3 py-1.5 bg-[#f8e6cb]/50 hover:bg-[#fd9b65] text-[#95491a] hover:text-[#341100] rounded-xl text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
                         >
-                          {isCode ? "View Code" : "Open File"}
+                          <Eye size={12} />
+                          {isPdf ? "View PDF" : isCode ? "View Code" : "View Notes"}
                         </button>
                         {isAdmin && (
                           <button
@@ -898,70 +948,141 @@ export default function SubjectHub({
 
       </div>
 
-      {/* Study Material Details Dialog Modal */}
+      {/* In-App Study Material Document Viewer Modal */}
       <AnimatePresence>
         {activeMaterial && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 md:p-6">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl relative border border-[#dac1c1]/30 flex flex-col justify-between"
+              className="bg-white w-full max-w-4xl h-[85vh] max-h-[750px] rounded-3xl p-5 md:p-6 shadow-2xl relative border border-[#dac1c1]/30 flex flex-col justify-between overflow-hidden"
             >
-              <div className="flex justify-between items-start border-b border-[#dac1c1]/20 pb-4">
+              {/* Modal Top Header Bar */}
+              <div className="flex flex-wrap justify-between items-center border-b border-[#dac1c1]/20 pb-4 gap-3">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                     materialIconColor(activeMaterial.type)
                   }`}>
-                    <FileText size={18} />
+                    {activeMaterial.type === "code" ? <Terminal size={18} /> : <FileText size={18} />}
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-[#40010d] line-clamp-1">{activeMaterial.name}</h4>
-                    <span className="text-[10px] text-[#877272] block">{activeMaterial.size} • Verified Study File</span>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-[#40010d] line-clamp-1">{activeMaterial.name}</h4>
+                      <span className="bg-[#fff2e1] text-[#95491a] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#dac1c1]/30">
+                        {activeMaterial.tag || "Study File"}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#877272] block mt-0.5">
+                      {activeMaterial.size} • {activeMaterial.addedTime || "In-App Permanent File"}
+                    </span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setActiveMaterial(null)}
-                  className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-[#40010d]"
-                >
-                  <X size={18} />
-                </button>
+
+                {/* Top Right Actions: Download & Close */}
+                <div className="flex items-center gap-2 ml-auto">
+                  {activeMaterial.details && !activeMaterial.details.startsWith("data:application/pdf") && !activeMaterial.details.startsWith("data:image/") && (
+                    <button
+                      onClick={() => handleCopyContent(activeMaterial.details)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#544243] text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                      title="Copy content to clipboard"
+                    >
+                      {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                      <span>{copied ? "Copied!" : "Copy"}</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => handleDownloadFile(activeMaterial)}
+                    className="px-4 py-2 bg-[#40010d] hover:bg-[#7a2c35] text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                    title="Download file to device"
+                  >
+                    <Download size={14} />
+                    <span>Download</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveMaterial(null)}
+                    className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-[#40010d] cursor-pointer"
+                    title="Close Viewer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
-              <div className="my-6 space-y-4 max-h-[300px] overflow-y-auto pr-1">
-                {activeMaterial.type === "code" ? (
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-extrabold text-[#95491a] tracking-wider uppercase block">Code Preview:</span>
-                    <pre className="p-4 bg-slate-950 text-[#c8eadd] font-mono text-xs rounded-xl overflow-x-auto leading-relaxed max-h-[220px]">
-                      {activeMaterial.details || `// No direct code preview available`}
+              {/* In-App Document Viewer Canvas Body */}
+              <div className="my-4 flex-1 w-full overflow-hidden rounded-2xl bg-slate-50 border border-[#dac1c1]/20 p-1 relative">
+                {activeMaterial.details?.startsWith("data:application/pdf") || activeMaterial.name.toLowerCase().endsWith(".pdf") ? (
+                  <div className="w-full h-full rounded-xl overflow-hidden bg-slate-900 flex flex-col">
+                    {activeMaterial.details?.startsWith("data:") ? (
+                      <object
+                        data={activeMaterial.details}
+                        type="application/pdf"
+                        className="w-full h-full rounded-xl border-0"
+                      >
+                        <iframe
+                          src={activeMaterial.details}
+                          className="w-full h-full rounded-xl border-0"
+                          title={activeMaterial.name}
+                        >
+                          <div className="p-8 text-center bg-white h-full flex flex-col items-center justify-center space-y-4">
+                            <FileText size={48} className="text-[#95491a] mx-auto" />
+                            <p className="text-sm font-bold text-[#40010d]">PDF Document Loaded</p>
+                            <p className="text-xs text-[#544243] max-w-sm">
+                              Inline preview is supported. Click the Download button at top right to view or save.
+                            </p>
+                            <button
+                              onClick={() => handleDownloadFile(activeMaterial)}
+                              className="px-5 py-2.5 bg-[#40010d] text-white rounded-xl text-xs font-bold cursor-pointer"
+                            >
+                              Download PDF File
+                            </button>
+                          </div>
+                        </iframe>
+                      </object>
+                    ) : (
+                      <div className="p-6 bg-[#fffcf9] rounded-2xl text-[#231a0a] text-sm leading-relaxed overflow-y-auto h-full whitespace-pre-wrap font-sans">
+                        {activeMaterial.details}
+                      </div>
+                    )}
+                  </div>
+                ) : activeMaterial.details?.startsWith("data:image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(activeMaterial.name) ? (
+                  <div className="w-full h-full bg-slate-950/5 rounded-xl p-4 flex items-center justify-center overflow-auto">
+                    <img
+                      src={activeMaterial.details}
+                      alt={activeMaterial.name}
+                      className="max-h-full max-w-full object-contain rounded-xl shadow-md"
+                    />
+                  </div>
+                ) : activeMaterial.type === "code" || /\.(js|ts|jsx|tsx|py|java|cpp|c|html|css|json|sh)$/i.test(activeMaterial.name) ? (
+                  <div className="w-full h-full bg-slate-950 text-[#c8eadd] font-mono text-xs rounded-xl p-5 overflow-auto leading-relaxed border border-slate-800">
+                    <pre className="whitespace-pre-wrap break-all">
+                      {activeMaterial.details || "// No code content available."}
                     </pre>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-extrabold text-[#95491a] tracking-wider uppercase block">File Synopsis & Insights:</span>
-                    <p className="text-xs text-[#544243] leading-relaxed">
-                      {activeMaterial.details || "This file contains detailed curated chapters compiled by seniors and approved by teaching assistants for end-semester revisions."}
-                    </p>
+                  <div className="w-full h-full bg-[#fffcf9] rounded-xl p-6 border border-[#dac1c1]/30 text-[#231a0a] text-sm leading-relaxed overflow-y-auto font-sans whitespace-pre-wrap shadow-inner">
+                    {activeMaterial.details || "This file contains verified syllabus notes compiled for your unit preparation."}
                   </div>
                 )}
               </div>
 
-              <div className="border-t border-[#dac1c1]/20 pt-4 flex justify-end gap-3">
-                <button
-                  onClick={() => setActiveMaterial(null)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-xs font-bold"
-                >
-                  Close Archive
-                </button>
-                <button
-                  onClick={() => {
-                    alert(`The file "${activeMaterial.name}" is now saved to your offline cache! 🥕`);
-                    setActiveMaterial(null);
-                  }}
-                  className="px-5 py-2 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-xl text-xs font-bold"
-                >
-                  Download File
-                </button>
+              {/* Modal Bottom Status Footer */}
+              <div className="border-t border-[#dac1c1]/20 pt-3 flex flex-wrap justify-between items-center text-[10px] text-[#877272]">
+                <span className="flex items-center gap-1 font-medium">
+                  <ShieldCheck size={14} className="text-emerald-600" />
+                  Saved permanently on Read Rabbit Application • In-App Viewing Enabled
+                </span>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setActiveMaterial(null)}
+                    className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#544243] rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Close Viewer
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
