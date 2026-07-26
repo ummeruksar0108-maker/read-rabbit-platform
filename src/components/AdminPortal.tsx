@@ -291,9 +291,14 @@ export default function AdminPortal({
     }
   };
 
-  // Process drag/drop or selected file in AdminPortal
-  const handleProcessPortalFile = (file: File, unitId: string) => {
-    if (!file) return;
+  // Process drag/drop or selected file in AdminPortal with FormData streaming upload
+  const handleProcessPortalFile = async (file: File, unitId: string) => {
+    if (!file) {
+      console.error("[ADMIN UPLOAD STEP 1 ERROR] No file provided");
+      return;
+    }
+
+    console.log(`[ADMIN UPLOAD STEP 1: File Selected] Name: ${file.name}, Size: ${file.size} bytes`);
 
     let sizeStr = "";
     if (file.size >= 1024 * 1024) {
@@ -309,96 +314,85 @@ export default function AdminPortal({
       type = "code";
     }
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const result = e.target?.result as string;
+    try {
+      console.log(`[ADMIN UPLOAD STEP 2: FormData Construct] Packaging binary stream...`);
+      const formData = new FormData();
+      formData.append("file", file);
 
-      try {
-        console.log(`[ADMIN UPLOAD] Sending "${name}" (${sizeStr}) to /api/upload...`);
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: name,
-            fileType: type,
-            fileData: result
-          })
-        });
+      console.log(`[ADMIN UPLOAD STEP 3: API Request] POSTing /api/upload...`);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData
+      });
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `HTTP ${res.status}`);
-        }
+      console.log(`[ADMIN UPLOAD STEP 4: Server Response] Status ${res.status}`);
 
-        const uploadData = await res.json();
-        console.log("[ADMIN UPLOAD SUCCESS]", uploadData);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server returned HTTP ${res.status}`);
+      }
 
-        const fileUrl = uploadData.fileUrl || result;
+      const uploadData = await res.json();
+      console.log("[ADMIN UPLOAD STEP 5: Success Response]", uploadData);
 
-        const newMaterial: StudyMaterial = {
-          id: uploadData.fileId || ("mat_unit_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5)),
-          name: name,
-          size: sizeStr,
-          addedTime: "Uploaded by Admin",
-          type: type,
-          isBookmarked: false,
-          tag: "Unit File",
-          details: fileUrl
+      if (!uploadData.fileUrl) {
+        throw new Error("Server succeeded but did not return a valid fileUrl");
+      }
+
+      const fileUrl = uploadData.fileUrl;
+
+      const newMaterial: StudyMaterial = {
+        id: uploadData.fileId || ("mat_unit_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5)),
+        name: name,
+        size: sizeStr,
+        addedTime: "Uploaded by Admin",
+        type: type,
+        isBookmarked: false,
+        tag: "Unit File",
+        details: fileUrl
+      };
+
+      const updatedFormUnits = formUnits.map(unit => {
+        if (unit.id !== unitId) return unit;
+        return {
+          ...unit,
+          materials: [...(unit.materials || []), newMaterial]
         };
+      });
 
-        const updatedFormUnits = formUnits.map(unit => {
-          if (unit.id !== unitId) return unit;
+      setFormUnits(updatedFormUnits);
+
+      if (editingSubject) {
+        const updatedCourses = courses.map(course => {
+          if (course.id !== selectedCourseId) return course;
           return {
-            ...unit,
-            materials: [...(unit.materials || []), newMaterial]
+            ...course,
+            semesters: course.semesters.map(sem => {
+              if (sem.id !== selectedSemesterId) return sem;
+              return {
+                ...sem,
+                subjects: sem.subjects.map(sub => {
+                  if (sub.id !== editingSubject.id) return sub;
+                  return {
+                    ...sub,
+                    units: updatedFormUnits
+                  };
+                })
+              };
+            })
           };
         });
-
-        setFormUnits(updatedFormUnits);
-
-        if (editingSubject) {
-          const updatedCourses = courses.map(course => {
-            if (course.id !== selectedCourseId) return course;
-            return {
-              ...course,
-              semesters: course.semesters.map(sem => {
-                if (sem.id !== selectedSemesterId) return sem;
-                return {
-                  ...sem,
-                  subjects: sem.subjects.map(sub => {
-                    if (sub.id !== editingSubject.id) return sub;
-                    return {
-                      ...sub,
-                      units: updatedFormUnits
-                    };
-                  })
-                };
-              })
-            };
-          });
-          onUpdateCourses(updatedCourses);
-          setEditingSubject({
-            ...editingSubject,
-            units: updatedFormUnits
-          });
-        }
-
-        alert(`"${name}" successfully uploaded and attached to this unit permanently across all devices! 🥕`);
-      } catch (err: any) {
-        console.error("[ADMIN UPLOAD ERROR]", err);
-        alert(`Upload failed: ${err.message || "Could not reach server storage"}`);
+        onUpdateCourses(updatedCourses);
+        setEditingSubject({
+          ...editingSubject,
+          units: updatedFormUnits
+        });
       }
-    };
 
-    reader.onerror = (err) => {
-      console.error("[ADMIN READER ERROR]", err);
-      alert("Could not read file. Please try another file.");
-    };
-
-    if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
-      reader.readAsText(file);
-    } else {
-      reader.readAsDataURL(file);
+      alert(`"${name}" successfully uploaded and attached to this unit permanently across all devices! 🥕`);
+    } catch (err: any) {
+      console.error("[ADMIN UPLOAD FATAL ERROR]", err);
+      alert(`Upload failed: ${err.message || "Could not reach server storage"}`);
     }
   };
 

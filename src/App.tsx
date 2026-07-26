@@ -218,6 +218,74 @@ export default function App() {
     localStorage.setItem("read_rabbit_student_name", studentName);
   }, [studentName]);
 
+  // Browser History & Navigation Synchronization System
+  const pushAppHistory = (
+    courseId: string | null,
+    semesterId: number | null,
+    subjectId: string | null,
+    tab: string,
+    splashVal: boolean = false
+  ) => {
+    const newState = {
+      isSplash: splashVal,
+      selectedCourseId: courseId,
+      selectedSemesterId: semesterId,
+      selectedSubjectId: subjectId,
+      activeTab: tab
+    };
+
+    const current = window.history.state;
+    if (
+      !current ||
+      current.selectedCourseId !== courseId ||
+      current.selectedSemesterId !== semesterId ||
+      current.selectedSubjectId !== subjectId ||
+      current.activeTab !== tab ||
+      current.isSplash !== splashVal
+    ) {
+      window.history.pushState(newState, "");
+    }
+  };
+
+  // Synchronize popstate event (Browser Back / Mobile Back Gesture)
+  useEffect(() => {
+    // Save initial state into history
+    const initialHist = {
+      isSplash,
+      selectedCourseId,
+      selectedSemesterId,
+      selectedSubjectId,
+      activeTab
+    };
+    if (!window.history.state) {
+      window.history.replaceState(initialHist, "");
+    }
+
+    const handlePopState = (e: PopStateEvent) => {
+      const state = e.state;
+      if (state && typeof state === "object") {
+        if (typeof state.isSplash === "boolean") {
+          setIsSplash(state.isSplash);
+        }
+        setSelectedCourseId(state.selectedCourseId ?? null);
+        setSelectedSemesterId(state.selectedSemesterId ?? null);
+        setSelectedSubjectId(state.selectedSubjectId ?? null);
+        if (state.activeTab) {
+          setActiveTab(state.activeTab);
+        }
+      } else {
+        // Fallback for root state
+        setIsSplash(false);
+        setSelectedSubjectId(null);
+        setSelectedSemesterId(null);
+        setActiveTab("semesters");
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   // Derived Active Models
   const activeCourse = useMemo(() => {
     return courses.find(c => c.id === selectedCourseId) || null;
@@ -239,16 +307,21 @@ export default function App() {
   }, [activeTab, selectedSemesterId, selectedSubjectId]);
 
   const handleGoBack = () => {
-    if (activeTab === "units" && selectedSubjectId !== null) {
-      setSelectedSubjectId(null);
-      setActiveTab("subjects");
-    } else if (activeTab === "subjects" && selectedSemesterId !== null) {
-      setSelectedSemesterId(null);
-      setActiveTab("semesters");
+    // Use browser history step back so popstate syncs seamlessly
+    if (window.history.length > 1) {
+      window.history.back();
     } else {
-      setActiveTab("semesters");
-      setSelectedSemesterId(null);
-      setSelectedSubjectId(null);
+      if (activeTab === "units" && selectedSubjectId !== null) {
+        setSelectedSubjectId(null);
+        setActiveTab("subjects");
+      } else if (activeTab === "subjects" && selectedSemesterId !== null) {
+        setSelectedSemesterId(null);
+        setActiveTab("semesters");
+      } else {
+        setActiveTab("semesters");
+        setSelectedSemesterId(null);
+        setSelectedSubjectId(null);
+      }
     }
   };
 
@@ -258,12 +331,14 @@ export default function App() {
     setSelectedSemesterId(null);
     setSelectedSubjectId(null);
     setActiveTab("semesters");
+    pushAppHistory(courseId, null, null, "semesters");
   };
 
   const handleChangeCourseClick = () => {
     setSelectedCourseId(null);
     setSelectedSemesterId(null);
     setSelectedSubjectId(null);
+    pushAppHistory(null, null, null, "semesters");
   };
 
   const handleSelectSemester = (courseId: string, semesterId: number) => {
@@ -271,6 +346,7 @@ export default function App() {
     setSelectedSemesterId(semesterId);
     setSelectedSubjectId(null);
     setActiveTab("subjects"); // Sub-navigation state to render subject cards
+    pushAppHistory(courseId, semesterId, null, "subjects");
   };
 
   const handleUnlockAllSemesters = () => {
@@ -313,6 +389,7 @@ export default function App() {
   const handleSelectSubject = (subjectId: string) => {
     setSelectedSubjectId(subjectId);
     setActiveTab("units"); // Sub-navigation state to render subject hub
+    pushAppHistory(selectedCourseId, selectedSemesterId, subjectId, "units");
   };
 
   // Admin handlers
@@ -456,6 +533,9 @@ export default function App() {
             // reset subject/sem state to view semesters roadmap
             setSelectedSemesterId(null);
             setSelectedSubjectId(null);
+            pushAppHistory(selectedCourseId, null, null, tab);
+          } else {
+            pushAppHistory(selectedCourseId, selectedSemesterId, selectedSubjectId, tab);
           }
         }}
         selectedCourseName={activeCourse?.name || null}

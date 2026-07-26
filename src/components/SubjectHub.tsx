@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial } from "../types";
 import { 
@@ -54,23 +54,87 @@ export default function SubjectHub({
   const [activeMaterial, setActiveMaterial] = useState<StudyMaterial | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Practice Quiz / Flashcard State
+  const [isPlayingQuiz, setIsPlayingQuiz] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [quizScore, setQuizScore] = useState(0);
+  const [showExplanation, setShowExplanation] = useState(false);
+
+  // History sync helper for SubjectHub modals
+  const openMaterial = (mat: StudyMaterial) => {
+    window.history.pushState({ subModal: "material", matId: mat.id }, "");
+    setActiveMaterial(mat);
+  };
+
+  const closeMaterial = () => {
+    setActiveMaterial(null);
+  };
+
+  const openUnit = (unit: Unit) => {
+    window.history.pushState({ subModal: "unit", unitId: unit.id }, "");
+    setSelectedUnit(unit);
+  };
+
+  const closeUnit = () => {
+    setSelectedUnit(null);
+  };
+
+  // Close active modal on browser Back button
+  useEffect(() => {
+    const handleHubPopState = () => {
+      if (activeMaterial) {
+        setActiveMaterial(null);
+      } else if (selectedUnit) {
+        setSelectedUnit(null);
+      } else if (isPlayingQuiz) {
+        setIsPlayingQuiz(false);
+      }
+    };
+
+    window.addEventListener("popstate", handleHubPopState);
+    return () => window.removeEventListener("popstate", handleHubPopState);
+  }, [activeMaterial, selectedUnit, isPlayingQuiz]);
+
   // Download File Helper
-  const handleDownloadFile = (material: StudyMaterial) => {
+  const handleDownloadFile = async (material: StudyMaterial) => {
     try {
-      const link = document.createElement("a");
-      link.download = material.name;
-      if (material.details && (material.details.startsWith("data:") || material.details.startsWith("/api/files/") || material.details.startsWith("http"))) {
+      if (material.details && (material.details.startsWith("/api/files/") || material.details.startsWith("http"))) {
+        const res = await fetch(material.details);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = material.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else if (material.details && material.details.startsWith("data:")) {
+        const link = document.createElement("a");
         link.href = material.details;
+        link.download = material.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       } else {
         const blob = new Blob([material.details || ""], { type: "text/plain;charset=utf-8" });
-        link.href = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = material.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
     } catch (err) {
       console.error("Failed to download file:", err);
-      alert(`Could not trigger automated download for "${material.name}".`);
+      if (material.details?.startsWith("/api/files/")) {
+        window.open(material.details, "_blank");
+      } else {
+        alert(`Could not trigger automated download for "${material.name}".`);
+      }
     }
   };
 
@@ -81,13 +145,6 @@ export default function SubjectHub({
       setTimeout(() => setCopied(false), 2000);
     });
   };
-
-  // Practice Quiz / Flashcard State
-  const [isPlayingQuiz, setIsPlayingQuiz] = useState(false);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [quizScore, setQuizScore] = useState(0);
-  const [showExplanation, setShowExplanation] = useState(false);
 
   // Admin File & Notes Upload / Management State
   const [isDragging, setIsDragging] = useState(false);
@@ -121,10 +178,15 @@ export default function SubjectHub({
     });
   };
 
-  const handleProcessFile = (file: File, targetUnitId: string | null) => {
+  const handleProcessFile = async (file: File, targetUnitId: string | null) => {
     setUploadError("");
     setUploadSuccess("");
-    if (!file) return;
+    if (!file) {
+      console.error("[PDF UPLOAD STEP 1 ERROR] No file provided to handleProcessFile");
+      return;
+    }
+
+    console.log(`[PDF UPLOAD STEP 1: File Selected] Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`);
 
     let sizeStr = "";
     if (file.size >= 1024 * 1024) {
@@ -140,83 +202,79 @@ export default function SubjectHub({
       type = "code";
     }
 
-    setUploadSuccess(`Uploading "${name}" to server...`);
+    setUploadSuccess(`[Uploading 0%] Preparing streaming upload for "${name}"...`);
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const result = e.target?.result as string;
+    try {
+      // Step 2: Construct FormData binary stream payload
+      console.log(`[PDF UPLOAD STEP 2: FormData Construction] Packaging binary stream payload...`);
+      const formData = new FormData();
+      formData.append("file", file);
 
-      try {
-        console.log(`[CLIENT UPLOAD] Sending "${name}" (${sizeStr}) to /api/upload...`);
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: name,
-            fileType: type,
-            fileData: result
-          })
-        });
+      // Step 3: Fetch API /api/upload
+      console.log(`[PDF UPLOAD STEP 3: API Request] Sending POST request to /api/upload...`);
+      setUploadSuccess(`[Uploading 50%] Transferring "${name}" (${sizeStr}) to permanent storage...`);
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Server responded with HTTP ${res.status}`);
-        }
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-        const uploadData = await res.json();
-        console.log("[CLIENT UPLOAD SUCCESS] Server saved file:", uploadData);
+      console.log(`[PDF UPLOAD STEP 4: HTTP Status] Response received: ${res.status} ${res.statusText}`);
 
-        const fileUrl = uploadData.fileUrl || result;
-
-        const newMaterial: StudyMaterial = {
-          id: uploadData.fileId || ("mat_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5)),
-          name: name,
-          size: sizeStr,
-          addedTime: "Uploaded by Admin",
-          type: type,
-          isBookmarked: false,
-          tag: targetUnitId ? "Unit File" : "Subject File",
-          details: fileUrl
-        };
-
-        if (targetUnitId) {
-          const updatedUnits = subject.units.map(unit => {
-            if (unit.id !== targetUnitId) return unit;
-            return {
-              ...unit,
-              materials: [...(unit.materials || []), newMaterial]
-            };
-          });
-          onUpdateSubject({
-            ...subject,
-            units: updatedUnits
-          });
-        } else {
-          onUpdateSubject({
-            ...subject,
-            materials: [...(subject.materials || []), newMaterial]
-          });
-        }
-
-        setUploadSuccess(`"${name}" successfully uploaded and saved permanently across all devices!`);
-        setTimeout(() => setUploadSuccess(""), 4000);
-      } catch (apiErr: any) {
-        console.error("[CLIENT UPLOAD API ERROR]", apiErr);
-        setUploadError(`Upload failed: ${apiErr.message || "Could not reach server storage"}`);
-        setUploadSuccess("");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error(`[PDF UPLOAD STEP 4 ERROR] Server returned error response:`, errData);
+        throw new Error(errData.error || `Server responded with HTTP ${res.status}`);
       }
-    };
 
-    reader.onerror = (err) => {
-      console.error("[CLIENT FILE READER ERROR]", err);
-      setUploadError("Could not read file locally. Please try another file.");
+      const uploadData = await res.json();
+      console.log("[PDF UPLOAD STEP 5: Server Saved] Success response:", uploadData);
+
+      if (!uploadData.fileUrl) {
+        throw new Error("Server succeeded but did not return a valid fileUrl");
+      }
+
+      const fileUrl = uploadData.fileUrl;
+
+      const newMaterial: StudyMaterial = {
+        id: uploadData.fileId || ("mat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 5)),
+        name: name,
+        size: sizeStr,
+        addedTime: "Uploaded by Admin",
+        type: type,
+        isBookmarked: false,
+        tag: targetUnitId ? "Unit File" : "Subject File",
+        details: fileUrl
+      };
+
+      // Step 6: Update State and sync curriculum
+      console.log("[PDF UPLOAD STEP 6: State Sync] Updating subject state and curriculum...");
+      if (targetUnitId) {
+        const updatedUnits = subject.units.map(unit => {
+          if (unit.id !== targetUnitId) return unit;
+          return {
+            ...unit,
+            materials: [...(unit.materials || []), newMaterial]
+          };
+        });
+        onUpdateSubject({
+          ...subject,
+          units: updatedUnits
+        });
+      } else {
+        onUpdateSubject({
+          ...subject,
+          materials: [...(subject.materials || []), newMaterial]
+        });
+      }
+
+      console.log(`[PDF UPLOAD SUCCESS COMPLETE] File "${name}" is attached and live at ${fileUrl}`);
+      setUploadSuccess(`✅ "${name}" successfully uploaded & saved permanently across all devices!`);
+      setTimeout(() => setUploadSuccess(""), 5000);
+    } catch (apiErr: any) {
+      console.error("[PDF UPLOAD FATAL ERROR]", apiErr);
+      setUploadError(`❌ Upload failed: ${apiErr.message || "Could not save file to server"}`);
       setUploadSuccess("");
-    };
-
-    if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
-      reader.readAsText(file);
-    } else {
-      reader.readAsDataURL(file);
     }
   };
 
@@ -539,7 +597,7 @@ export default function SubjectHub({
                               key={m.id}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setActiveMaterial(m);
+                                openMaterial(m);
                               }}
                               className="p-3 bg-[#fff8f3]/80 hover:bg-[#ffebd6] rounded-xl border border-[#dac1c1]/30 flex justify-between items-center transition-all cursor-pointer group/file"
                             >
@@ -560,7 +618,7 @@ export default function SubjectHub({
                               </div>
                               <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <button 
-                                  onClick={() => setActiveMaterial(m)}
+                                  onClick={() => openMaterial(m)}
                                   className="px-3 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
                                 >
                                   <Eye size={12} />
@@ -848,7 +906,7 @@ export default function SubjectHub({
                   return (
                     <div
                       key={material.id}
-                      onClick={() => setActiveMaterial(material)}
+                      onClick={() => openMaterial(material)}
                       className="p-5 bg-white rounded-3xl border border-[#dac1c1]/20 shadow-xs hover:shadow-md transition-all cursor-pointer flex justify-between items-center"
                     >
                       <div className="flex items-center gap-4">
@@ -867,7 +925,7 @@ export default function SubjectHub({
                       
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         <button 
-                          onClick={() => setActiveMaterial(material)}
+                          onClick={() => openMaterial(material)}
                           className="px-3 py-1.5 bg-[#f8e6cb]/50 hover:bg-[#fd9b65] text-[#95491a] hover:text-[#341100] rounded-xl text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
                         >
                           <Eye size={12} />
@@ -1032,7 +1090,7 @@ export default function SubjectHub({
                   </button>
 
                   <button
-                    onClick={() => setActiveMaterial(null)}
+                    onClick={closeMaterial}
                     className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-[#40010d] cursor-pointer"
                     title="Close Viewer"
                   >
@@ -1093,7 +1151,7 @@ export default function SubjectHub({
 
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setActiveMaterial(null)}
+                    onClick={closeMaterial}
                     className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#544243] rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
                     Close Viewer

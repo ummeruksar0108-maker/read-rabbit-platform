@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import fsPromises from "fs/promises";
 import dotenv from "dotenv";
+import multer from "multer";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
@@ -11,7 +12,7 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Allow up to 50MB payloads for base64 file uploads
+// Allow up to 50MB payloads for base64 file uploads fallback
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -26,6 +27,23 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
+
+// Multer Storage Configuration for PDF / File Streams
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || ".bin";
+    const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+    cb(null, fileId);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit per PDF file
+});
 
 // Initialize Gemini client lazily/safely
 let aiClient: GoogleGenAI | null = null;
@@ -83,43 +101,55 @@ app.post("/api/curriculum", async (req, res) => {
   }
 });
 
-// POST /api/upload - Permanent File Upload Endpoint
-app.post("/api/upload", async (req, res) => {
+// POST /api/upload - Permanent File Upload Endpoint (Handles both FormData & JSON)
+app.post("/api/upload", upload.single("file"), async (req, res) => {
   try {
-    const { fileName, fileType, fileData } = req.body;
-    
-    if (!fileName || !fileData) {
-      console.warn("[SERVER UPLOAD WARN] Missing required upload parameters");
-      return res.status(400).json({ error: "fileName and fileData are required" });
+    console.log("[SERVER UPLOAD] Incoming upload request...");
+
+    // 1. Check if multipart/form-data upload via multer
+    if (req.file) {
+      const fileId = req.file.filename;
+      const fileUrl = `/api/files/${fileId}`;
+      console.log(`[SERVER UPLOAD SUCCESS] Saved multipart file "${req.file.originalname}" (${req.file.size} bytes) -> ${fileUrl}`);
+      return res.json({
+        success: true,
+        fileId,
+        fileUrl,
+        fileName: req.file.originalname,
+        sizeBytes: req.file.size
+      });
     }
 
-    // Generate unique safe file ID and filename
-    const ext = path.extname(fileName) || ".bin";
-    const sanitizeName = path.basename(fileName, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
-    const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
-    const targetPath = path.join(UPLOADS_DIR, fileId);
+    // 2. Fallback check for JSON body payload
+    const { fileName, fileType, fileData } = req.body || {};
+    if (fileName && fileData) {
+      const ext = path.extname(fileName) || ".bin";
+      const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+      const targetPath = path.join(UPLOADS_DIR, fileId);
 
-    // Parse base64 string or plain text
-    let buffer: Buffer;
-    if (typeof fileData === "string" && fileData.startsWith("data:")) {
-      const base64Part = fileData.split(",")[1];
-      buffer = Buffer.from(base64Part, "base64");
-    } else {
-      buffer = Buffer.from(fileData, "utf-8");
+      let buffer: Buffer;
+      if (typeof fileData === "string" && fileData.startsWith("data:")) {
+        const base64Part = fileData.split(",")[1];
+        buffer = Buffer.from(base64Part, "base64");
+      } else {
+        buffer = Buffer.from(fileData, "utf-8");
+      }
+
+      await fsPromises.writeFile(targetPath, buffer);
+      const fileUrl = `/api/files/${fileId}`;
+      console.log(`[SERVER UPLOAD SUCCESS] Saved JSON file "${fileName}" (${buffer.length} bytes) -> ${fileUrl}`);
+
+      return res.json({
+        success: true,
+        fileId,
+        fileUrl,
+        fileName,
+        sizeBytes: buffer.length
+      });
     }
 
-    await fsPromises.writeFile(targetPath, buffer);
-    const fileUrl = `/api/files/${fileId}`;
-
-    console.log(`[SERVER UPLOAD SUCCESS] Saved file "${fileName}" (${buffer.length} bytes) to ${targetPath}. URL: ${fileUrl}`);
-
-    return res.json({
-      success: true,
-      fileId,
-      fileUrl,
-      fileName,
-      sizeBytes: buffer.length
-    });
+    console.warn("[SERVER UPLOAD WARN] No file payload attached in request");
+    return res.status(400).json({ error: "No file provided in request" });
   } catch (error: any) {
     console.error("[SERVER UPLOAD ERROR] Exception during file save:", error);
     return res.status(500).json({ error: "Server failed to save uploaded file", details: error.message });
@@ -130,7 +160,6 @@ app.post("/api/upload", async (req, res) => {
 app.get("/api/files/:fileId", (req, res) => {
   try {
     const { fileId } = req.params;
-    // Prevent directory traversal
     const safeFileId = path.basename(fileId);
     const filePath = path.join(UPLOADS_DIR, safeFileId);
 
@@ -140,6 +169,9 @@ app.get("/api/files/:fileId", (req, res) => {
     }
 
     const ext = path.extname(safeFileId).toLowerCase();
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Accept-Ranges", "bytes");
+
     if (ext === ".pdf") {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", "inline");
