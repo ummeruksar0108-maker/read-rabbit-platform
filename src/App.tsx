@@ -149,9 +149,41 @@ export default function App() {
     alert("🥕 Welcome, Owner! The hidden entrance to the Administrator Portal is now unlocked.");
   };
 
-  // Persist State Changes
+  // Fetch curriculum permanently from server on initial load
   useEffect(() => {
-    localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(courses));
+    fetch("/api/curriculum")
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to fetch curriculum");
+        return res.json();
+      })
+      .then(data => {
+        if (data && Array.isArray(data) && data.length > 0) {
+          console.log("[CLIENT] Received permanent curriculum data from server:", data);
+          setCourses(data);
+        }
+      })
+      .catch(err => {
+        console.warn("[CLIENT WARN] Server curriculum fetch error, using local state:", err);
+      });
+  }, []);
+
+  // Persist State Changes to Server and Local Storage (safely guarded)
+  useEffect(() => {
+    // 1. Sync to server backend
+    fetch("/api/curriculum", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courses })
+    }).catch(err => {
+      console.warn("[CLIENT WARN] Failed to save curriculum to server:", err);
+    });
+
+    // 2. Local storage backup with exception handling against QuotaExceededError
+    try {
+      localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(courses));
+    } catch (e) {
+      console.warn("[CLIENT WARN] localStorage quota exceeded, skipped local caching. Server storage active.", e);
+    }
   }, [courses]);
 
   useEffect(() => {

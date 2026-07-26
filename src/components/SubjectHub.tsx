@@ -59,7 +59,7 @@ export default function SubjectHub({
     try {
       const link = document.createElement("a");
       link.download = material.name;
-      if (material.details && material.details.startsWith("data:")) {
+      if (material.details && (material.details.startsWith("data:") || material.details.startsWith("/api/files/") || material.details.startsWith("http"))) {
         link.href = material.details;
       } else {
         const blob = new Blob([material.details || ""], { type: "text/plain;charset=utf-8" });
@@ -140,47 +140,77 @@ export default function SubjectHub({
       type = "code";
     }
 
+    setUploadSuccess(`Uploading "${name}" to server...`);
+
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const result = e.target?.result as string;
-      const detailsText = result || "Study file uploaded by Administrator.";
-      
-      const newMaterial: StudyMaterial = {
-        id: "mat_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
-        name: name,
-        size: sizeStr,
-        addedTime: "Uploaded by Admin",
-        type: type,
-        isBookmarked: false,
-        tag: targetUnitId ? "Unit File" : "Subject File",
-        details: detailsText
-      };
 
-      if (targetUnitId) {
-        const updatedUnits = subject.units.map(unit => {
-          if (unit.id !== targetUnitId) return unit;
-          return {
-            ...unit,
-            materials: [...(unit.materials || []), newMaterial]
-          };
+      try {
+        console.log(`[CLIENT UPLOAD] Sending "${name}" (${sizeStr}) to /api/upload...`);
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: name,
+            fileType: type,
+            fileData: result
+          })
         });
-        onUpdateSubject({
-          ...subject,
-          units: updatedUnits
-        });
-      } else {
-        onUpdateSubject({
-          ...subject,
-          materials: [...(subject.materials || []), newMaterial]
-        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server responded with HTTP ${res.status}`);
+        }
+
+        const uploadData = await res.json();
+        console.log("[CLIENT UPLOAD SUCCESS] Server saved file:", uploadData);
+
+        const fileUrl = uploadData.fileUrl || result;
+
+        const newMaterial: StudyMaterial = {
+          id: uploadData.fileId || ("mat_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5)),
+          name: name,
+          size: sizeStr,
+          addedTime: "Uploaded by Admin",
+          type: type,
+          isBookmarked: false,
+          tag: targetUnitId ? "Unit File" : "Subject File",
+          details: fileUrl
+        };
+
+        if (targetUnitId) {
+          const updatedUnits = subject.units.map(unit => {
+            if (unit.id !== targetUnitId) return unit;
+            return {
+              ...unit,
+              materials: [...(unit.materials || []), newMaterial]
+            };
+          });
+          onUpdateSubject({
+            ...subject,
+            units: updatedUnits
+          });
+        } else {
+          onUpdateSubject({
+            ...subject,
+            materials: [...(subject.materials || []), newMaterial]
+          });
+        }
+
+        setUploadSuccess(`"${name}" successfully uploaded and saved permanently across all devices!`);
+        setTimeout(() => setUploadSuccess(""), 4000);
+      } catch (apiErr: any) {
+        console.error("[CLIENT UPLOAD API ERROR]", apiErr);
+        setUploadError(`Upload failed: ${apiErr.message || "Could not reach server storage"}`);
+        setUploadSuccess("");
       }
-
-      setUploadSuccess(`"${name}" successfully attached and saved!`);
-      setTimeout(() => setUploadSuccess(""), 4000);
     };
 
-    reader.onerror = () => {
-      setUploadError("Could not read file. Please try another file.");
+    reader.onerror = (err) => {
+      console.error("[CLIENT FILE READER ERROR]", err);
+      setUploadError("Could not read file locally. Please try another file.");
+      setUploadSuccess("");
     };
 
     if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
@@ -1015,7 +1045,7 @@ export default function SubjectHub({
               <div className="my-4 flex-1 w-full overflow-hidden rounded-2xl bg-slate-50 border border-[#dac1c1]/20 p-1 relative">
                 {activeMaterial.details?.startsWith("data:application/pdf") || activeMaterial.name.toLowerCase().endsWith(".pdf") ? (
                   <div className="w-full h-full rounded-xl overflow-hidden bg-slate-900 flex flex-col">
-                    {activeMaterial.details?.startsWith("data:") ? (
+                    {activeMaterial.details?.startsWith("data:") || activeMaterial.details?.startsWith("/api/files/") || activeMaterial.details?.startsWith("http") ? (
                       <object
                         data={activeMaterial.details}
                         type="application/pdf"
@@ -1025,21 +1055,7 @@ export default function SubjectHub({
                           src={activeMaterial.details}
                           className="w-full h-full rounded-xl border-0"
                           title={activeMaterial.name}
-                        >
-                          <div className="p-8 text-center bg-white h-full flex flex-col items-center justify-center space-y-4">
-                            <FileText size={48} className="text-[#95491a] mx-auto" />
-                            <p className="text-sm font-bold text-[#40010d]">PDF Document Loaded</p>
-                            <p className="text-xs text-[#544243] max-w-sm">
-                              Inline preview is supported. Click the Download button at top right to view or save.
-                            </p>
-                            <button
-                              onClick={() => handleDownloadFile(activeMaterial)}
-                              className="px-5 py-2.5 bg-[#40010d] text-white rounded-xl text-xs font-bold cursor-pointer"
-                            >
-                              Download PDF File
-                            </button>
-                          </div>
-                        </iframe>
+                        />
                       </object>
                     ) : (
                       <div className="p-6 bg-[#fffcf9] rounded-2xl text-[#231a0a] text-sm leading-relaxed overflow-y-auto h-full whitespace-pre-wrap font-sans">

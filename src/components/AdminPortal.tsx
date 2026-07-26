@@ -310,62 +310,88 @@ export default function AdminPortal({
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const result = e.target?.result as string;
-      const detailsText = result || "Curated study resource uploaded by administrator.";
-      
-      const newMaterial: StudyMaterial = {
-        id: "mat_unit_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
-        name: name,
-        size: sizeStr,
-        addedTime: "Uploaded by Admin",
-        type: type,
-        isBookmarked: false,
-        tag: "Unit File",
-        details: detailsText
-      };
 
-      const updatedFormUnits = formUnits.map(unit => {
-        if (unit.id !== unitId) return unit;
-        return {
-          ...unit,
-          materials: [...(unit.materials || []), newMaterial]
+      try {
+        console.log(`[ADMIN UPLOAD] Sending "${name}" (${sizeStr}) to /api/upload...`);
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: name,
+            fileType: type,
+            fileData: result
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+
+        const uploadData = await res.json();
+        console.log("[ADMIN UPLOAD SUCCESS]", uploadData);
+
+        const fileUrl = uploadData.fileUrl || result;
+
+        const newMaterial: StudyMaterial = {
+          id: uploadData.fileId || ("mat_unit_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5)),
+          name: name,
+          size: sizeStr,
+          addedTime: "Uploaded by Admin",
+          type: type,
+          isBookmarked: false,
+          tag: "Unit File",
+          details: fileUrl
         };
-      });
 
-      setFormUnits(updatedFormUnits);
-
-      if (editingSubject) {
-        const updatedCourses = courses.map(course => {
-          if (course.id !== selectedCourseId) return course;
+        const updatedFormUnits = formUnits.map(unit => {
+          if (unit.id !== unitId) return unit;
           return {
-            ...course,
-            semesters: course.semesters.map(sem => {
-              if (sem.id !== selectedSemesterId) return sem;
-              return {
-                ...sem,
-                subjects: sem.subjects.map(sub => {
-                  if (sub.id !== editingSubject.id) return sub;
-                  return {
-                    ...sub,
-                    units: updatedFormUnits
-                  };
-                })
-              };
-            })
+            ...unit,
+            materials: [...(unit.materials || []), newMaterial]
           };
         });
-        onUpdateCourses(updatedCourses);
-        setEditingSubject({
-          ...editingSubject,
-          units: updatedFormUnits
-        });
-      }
 
-      alert(`"${name}" successfully uploaded and attached to this unit permanently! 🥕`);
+        setFormUnits(updatedFormUnits);
+
+        if (editingSubject) {
+          const updatedCourses = courses.map(course => {
+            if (course.id !== selectedCourseId) return course;
+            return {
+              ...course,
+              semesters: course.semesters.map(sem => {
+                if (sem.id !== selectedSemesterId) return sem;
+                return {
+                  ...sem,
+                  subjects: sem.subjects.map(sub => {
+                    if (sub.id !== editingSubject.id) return sub;
+                    return {
+                      ...sub,
+                      units: updatedFormUnits
+                    };
+                  })
+                };
+              })
+            };
+          });
+          onUpdateCourses(updatedCourses);
+          setEditingSubject({
+            ...editingSubject,
+            units: updatedFormUnits
+          });
+        }
+
+        alert(`"${name}" successfully uploaded and attached to this unit permanently across all devices! 🥕`);
+      } catch (err: any) {
+        console.error("[ADMIN UPLOAD ERROR]", err);
+        alert(`Upload failed: ${err.message || "Could not reach server storage"}`);
+      }
     };
 
-    reader.onerror = () => {
+    reader.onerror = (err) => {
+      console.error("[ADMIN READER ERROR]", err);
       alert("Could not read file. Please try another file.");
     };
 
