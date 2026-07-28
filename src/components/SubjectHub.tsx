@@ -206,20 +206,20 @@ export default function SubjectHub({
   const [webSaveSuccess, setWebSaveSuccess] = useState(false);
   const [lastUploadedMaterialName, setLastUploadedMaterialName] = useState<string | null>(null);
 
-  const handleManualSaveToWeb = async (fileName?: string) => {
+  const handleManualSaveToWeb = async (updatedSubjectObj?: Subject | string) => {
     setIsSavingWeb(true);
     try {
-      // 1. Flush subject state to App
-      onUpdateSubject(subject);
+      let targetSubject = subject;
+      let fileName: string | undefined = undefined;
 
-      // 2. Direct POST to /api/curriculum server endpoint to guarantee instant storage
-      if ((window as any).__CURRICULUM_COURSES__) {
-        await fetch("/api/curriculum", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify((window as any).__CURRICULUM_COURSES__)
-        }).catch(() => {});
+      if (typeof updatedSubjectObj === "object" && updatedSubjectObj !== null) {
+        targetSubject = updatedSubjectObj;
+      } else if (typeof updatedSubjectObj === "string") {
+        fileName = updatedSubjectObj;
       }
+
+      // Flush updated subject state to App
+      onUpdateSubject(targetSubject);
 
       setWebSaveSuccess(true);
       if (fileName) {
@@ -257,6 +257,10 @@ export default function SubjectHub({
   };
 
   const handleAddYoutubeLink = (unitId: string) => {
+    if (!isAdmin) {
+      alert("Only administrator account can attach YouTube links.");
+      return;
+    }
     if (!ytUrl.trim()) return;
     const newYt = {
       id: "yt_" + Date.now(),
@@ -288,6 +292,10 @@ export default function SubjectHub({
   };
 
   const handleAddImportantQuestion = (unitId: string) => {
+    if (!isAdmin) {
+      alert("Only administrator account can add important questions.");
+      return;
+    }
     if (!qText.trim()) return;
     const newQ = {
       id: "q_" + Date.now(),
@@ -320,6 +328,10 @@ export default function SubjectHub({
   };
 
   const handleProcessFile = async (file: File, targetUnitId: string | null) => {
+    if (!isAdmin) {
+      alert("Only administrator account can upload files or notes.");
+      return;
+    }
     setUploadError("");
     setUploadSuccess("");
     if (!file) {
@@ -447,31 +459,31 @@ export default function SubjectHub({
     };
 
     // Update State and sync curriculum
-    if (targetUnitId) {
-      const updatedUnits = subject.units.map(unit => {
+    const updatedSubjectObj: Subject = targetUnitId ? {
+      ...subject,
+      units: subject.units.map(unit => {
         if (unit.id !== targetUnitId) return unit;
         return {
           ...unit,
           materials: [...(unit.materials || []), newMaterial]
         };
-      });
-      onUpdateSubject({
-        ...subject,
-        units: updatedUnits
-      });
-    } else {
-      onUpdateSubject({
-        ...subject,
-        materials: [...(subject.materials || []), newMaterial]
-      });
-    }
+      })
+    } : {
+      ...subject,
+      materials: [...(subject.materials || []), newMaterial]
+    };
 
+    onUpdateSubject(updatedSubjectObj);
     setLastUploadedMaterialName(name);
     setUploadSuccess(`✅ "${name}" successfully uploaded and attached!`);
-    handleManualSaveToWeb(name);
+    handleManualSaveToWeb(updatedSubjectObj);
   };
 
   const handleCreateWrittenNote = (targetUnitId: string | null) => {
+    if (!isAdmin) {
+      alert("Only administrator account can upload files or notes.");
+      return;
+    }
     if (!adminNoteTitle.trim()) {
       alert("Please enter a title for the notes.");
       return;
@@ -494,30 +506,26 @@ export default function SubjectHub({
       details: adminNoteContent
     };
 
-    if (targetUnitId) {
-      const updatedUnits = subject.units.map(unit => {
+    const updatedSubjectObj: Subject = targetUnitId ? {
+      ...subject,
+      units: subject.units.map(unit => {
         if (unit.id !== targetUnitId) return unit;
         return {
           ...unit,
           materials: [...(unit.materials || []), newMaterial]
         };
-      });
-      onUpdateSubject({
-        ...subject,
-        units: updatedUnits
-      });
-    } else {
-      onUpdateSubject({
-        ...subject,
-        materials: [...(subject.materials || []), newMaterial]
-      });
-    }
+      })
+    } : {
+      ...subject,
+      materials: [...(subject.materials || []), newMaterial]
+    };
 
+    onUpdateSubject(updatedSubjectObj);
     setAdminNoteTitle("");
     setAdminNoteContent("");
     setLastUploadedMaterialName(name);
     setUploadSuccess(`Note "${name}" created and saved permanently!`);
-    handleManualSaveToWeb(name);
+    handleManualSaveToWeb(updatedSubjectObj);
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -888,7 +896,7 @@ export default function SubjectHub({
                                       <span>Save</span>
                                     </button>
 
-                                    {(isAdmin || selectedUnit?.id === unit.id) && (
+                                    {isAdmin && (
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteUnitMaterial(unit.id, m.id)}
@@ -905,8 +913,8 @@ export default function SubjectHub({
                           </div>
                         )}
 
-                        {/* File Upload Dropzone / Quick Add */}
-                        {selectedUnit?.id === unit.id && (
+                        {/* File Upload Dropzone / Quick Add (Only Admin) */}
+                        {isAdmin && selectedUnit?.id === unit.id && (
                           <div className="mt-3 p-3.5 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-3 text-left">
                             <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
                               ➕ Attach File or Notes to Unit {unit.number}
@@ -1097,14 +1105,16 @@ export default function SubjectHub({
                                     </h5>
                                   </div>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteImportantQuestion(unit.id, q.id)}
-                                    className="p-1 text-red-500 hover:text-red-700 rounded-lg shrink-0 cursor-pointer"
-                                    title="Delete Question"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteImportantQuestion(unit.id, q.id)}
+                                      className="p-1 text-red-500 hover:text-red-700 rounded-lg shrink-0 cursor-pointer"
+                                      title="Delete Question"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
                                 </div>
 
                                 {q.answer && (
@@ -1129,44 +1139,46 @@ export default function SubjectHub({
                           </div>
                         )}
 
-                        {/* Form to add Important Question */}
-                        <div className="mt-3 p-3 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-2">
-                          <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
-                            ➕ Add Important Question for Unit {unit.number}
-                          </span>
-                          <input
-                            type="text"
-                            placeholder="Type exam question here..."
-                            value={qText}
-                            onChange={(e) => setQText(e.target.value)}
-                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-xl px-3 py-1.5 text-xs focus:outline-none"
-                          />
-                          <textarea
-                            rows={2}
-                            placeholder="Type solution or step-by-step answer key..."
-                            value={qAnswer}
-                            onChange={(e) => setQAnswer(e.target.value)}
-                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-xl p-2.5 text-xs focus:outline-none font-sans"
-                          />
-                          <div className="flex justify-between items-center pt-1">
-                            <select
-                              value={qImportance}
-                              onChange={(e) => setQImportance(e.target.value as any)}
-                              className="bg-white border border-[#dac1c1]/40 rounded-lg text-[10px] px-2 py-1 focus:outline-none font-bold text-[#544243]"
-                            >
-                              <option value="High">High Importance (Repeated)</option>
-                              <option value="Medium">Medium Importance</option>
-                              <option value="Low">Low / Optional</option>
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => handleAddImportantQuestion(unit.id)}
-                              className="px-3.5 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-xl text-[10px] font-bold cursor-pointer transition-all shadow-xs"
-                            >
-                              Save Important Question
-                            </button>
+                        {/* Form to add Important Question (Only Admin) */}
+                        {isAdmin && (
+                          <div className="mt-3 p-3 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-2">
+                            <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
+                              ➕ Add Important Question for Unit {unit.number}
+                            </span>
+                            <input
+                              type="text"
+                              placeholder="Type exam question here..."
+                              value={qText}
+                              onChange={(e) => setQText(e.target.value)}
+                              className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-xl px-3 py-1.5 text-xs focus:outline-none"
+                            />
+                            <textarea
+                              rows={2}
+                              placeholder="Type solution or step-by-step answer key..."
+                              value={qAnswer}
+                              onChange={(e) => setQAnswer(e.target.value)}
+                              className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-xl p-2.5 text-xs focus:outline-none font-sans"
+                            />
+                            <div className="flex justify-between items-center pt-1">
+                              <select
+                                value={qImportance}
+                                onChange={(e) => setQImportance(e.target.value as any)}
+                                className="bg-white border border-[#dac1c1]/40 rounded-lg text-[10px] px-2 py-1 focus:outline-none font-bold text-[#544243]"
+                              >
+                                <option value="High">High Importance (Repeated)</option>
+                                <option value="Medium">Medium Importance</option>
+                                <option value="Low">Low / Optional</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleAddImportantQuestion(unit.id)}
+                                className="px-3.5 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-xl text-[10px] font-bold cursor-pointer transition-all shadow-xs"
+                              >
+                                Save Important Question
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
 
@@ -1251,14 +1263,16 @@ export default function SubjectHub({
                                         <span>YouTube ↗</span>
                                       </a>
 
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteYoutubeLink(unit.id, yt.id)}
-                                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                                        title="Remove Video Reference"
-                                      >
-                                        <Trash2 size={13} />
-                                      </button>
+                                      {isAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteYoutubeLink(unit.id, yt.id)}
+                                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                                          title="Remove Video Reference"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -1267,37 +1281,39 @@ export default function SubjectHub({
                           </div>
                         )}
 
-                        {/* Form to add YouTube Video Reference */}
-                        <div className="mt-3 p-3.5 bg-[#fffcf9] rounded-2xl border border-dashed border-red-300 space-y-2">
-                          <span className="text-[10px] font-extrabold text-[#40010d] uppercase flex items-center gap-1">
-                            <Youtube size={14} className="text-red-500" />
-                            Attach YouTube Video Reference to Unit {unit.number}
-                          </span>
-                          <input
-                            type="text"
-                            placeholder="Video Title (e.g. Unit 1 Complete One-Shot Lecture)"
-                            value={ytTitle}
-                            onChange={(e) => setYtTitle(e.target.value)}
-                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-red-400 rounded-xl px-3 py-1.5 text-xs focus:outline-none"
-                          />
-                          <input
-                            type="url"
-                            placeholder="Paste YouTube Video URL (e.g. https://www.youtube.com/watch?v=...)"
-                            value={ytUrl}
-                            onChange={(e) => setYtUrl(e.target.value)}
-                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-red-400 rounded-xl px-3 py-1.5 text-xs focus:outline-none font-mono"
-                          />
-                          <div className="flex justify-end pt-1">
-                            <button
-                              type="button"
-                              onClick={() => handleAddYoutubeLink(unit.id)}
-                              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1"
-                            >
-                              <Plus size={13} />
-                              <span>Add YouTube Video</span>
-                            </button>
+                        {/* Form to add YouTube Video Reference (Only Admin) */}
+                        {isAdmin && (
+                          <div className="mt-3 p-3.5 bg-[#fffcf9] rounded-2xl border border-dashed border-red-300 space-y-2">
+                            <span className="text-[10px] font-extrabold text-[#40010d] uppercase flex items-center gap-1">
+                              <Youtube size={14} className="text-red-500" />
+                              Attach YouTube Video Reference to Unit {unit.number}
+                            </span>
+                            <input
+                              type="text"
+                              placeholder="Video Title (e.g. Unit 1 Complete One-Shot Lecture)"
+                              value={ytTitle}
+                              onChange={(e) => setYtTitle(e.target.value)}
+                              className="w-full bg-white border border-[#dac1c1]/40 focus:border-red-400 rounded-xl px-3 py-1.5 text-xs focus:outline-none"
+                            />
+                            <input
+                              type="url"
+                              placeholder="Paste YouTube Video URL (e.g. https://www.youtube.com/watch?v=...)"
+                              value={ytUrl}
+                              onChange={(e) => setYtUrl(e.target.value)}
+                              className="w-full bg-white border border-[#dac1c1]/40 focus:border-red-400 rounded-xl px-3 py-1.5 text-xs focus:outline-none font-mono"
+                            />
+                            <div className="flex justify-end pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleAddYoutubeLink(unit.id)}
+                                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1"
+                              >
+                                <Plus size={13} />
+                                <span>Add YouTube Video</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>

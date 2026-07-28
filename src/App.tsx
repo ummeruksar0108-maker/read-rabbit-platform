@@ -164,6 +164,27 @@ export default function App() {
   const [lastSyncSuccessTime, setLastSyncSuccessTime] = useState<string>("");
   const isInitialServerFetchDone = useRef(false);
   const isFetchingFromServer = useRef(false);
+  const lastLocalMutationTime = useRef<number>(0);
+
+  // Helper function to save curriculum directly to server
+  const saveCurriculumToServer = async (coursesToSave: Course[]) => {
+    lastLocalMutationTime.current = Date.now();
+    try {
+      await fetch("/api/curriculum", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courses: coursesToSave })
+      });
+      setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    } catch (err) {
+      console.warn("[CLIENT WARN] Failed to save curriculum to server:", err);
+    }
+    try {
+      localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(coursesToSave));
+    } catch (e) {
+      // LocalStorage quota fallback
+    }
+  };
 
   // Helper function to fetch latest curriculum from server
   const fetchCurriculumFromServer = async (isManualCall = false) => {
@@ -175,13 +196,16 @@ export default function App() {
         const data = await res.json();
         if (data && Array.isArray(data) && data.length > 0) {
           const serverJson = JSON.stringify(data);
-          setCourses((prevCourses) => {
-            if (JSON.stringify(prevCourses) !== serverJson) {
-              console.log("[LIVE CLOUD SYNC] Updated curriculum from server! New uploads synchronized.");
-              return data;
-            }
-            return prevCourses;
-          });
+          // If a local edit happened in the last 8 seconds, don't overwrite local changes
+          if (Date.now() - lastLocalMutationTime.current > 8000) {
+            setCourses((prevCourses) => {
+              if (JSON.stringify(prevCourses) !== serverJson) {
+                console.log("[LIVE CLOUD SYNC] Updated curriculum from server! New uploads synchronized.");
+                return data;
+              }
+              return prevCourses;
+            });
+          }
           setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
           try {
             localStorage.setItem("read_rabbit_curriculum_v2", serverJson);
@@ -222,31 +246,13 @@ export default function App() {
     };
   }, []);
 
-  // Persist State Changes to Server and Local Storage (safely guarded against overwrite races)
+  // Persist State Changes to Server and Local Storage
   useEffect(() => {
-    // DO NOT overwrite server curriculum until initial fetch from server has completed,
-    // or while currently applying data fetched from the server!
-    if (!isInitialServerFetchDone.current || isFetchingFromServer.current) {
+    if (!isInitialServerFetchDone.current) {
       return;
     }
 
-    // 1. Sync to server backend
-    fetch("/api/curriculum", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ courses })
-    }).then(() => {
-      setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-    }).catch(err => {
-      console.warn("[CLIENT WARN] Failed to save curriculum to server:", err);
-    });
-
-    // 2. Local storage backup with exception handling against QuotaExceededError
-    try {
-      localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(courses));
-    } catch (e) {
-      console.warn("[CLIENT WARN] localStorage quota exceeded, skipped local caching. Server storage active.", e);
-    }
+    saveCurriculumToServer(courses);
   }, [courses]);
 
   useEffect(() => {

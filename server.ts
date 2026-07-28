@@ -88,7 +88,10 @@ app.get("/api/curriculum", async (req, res) => {
 // POST /api/curriculum - Save curriculum permanently
 app.post("/api/curriculum", async (req, res) => {
   try {
-    const { courses } = req.body;
+    let courses = req.body?.courses;
+    if (!courses && Array.isArray(req.body)) {
+      courses = req.body;
+    }
     if (!courses || !Array.isArray(courses)) {
       return res.status(400).json({ error: "Invalid courses payload" });
     }

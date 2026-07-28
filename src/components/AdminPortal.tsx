@@ -92,7 +92,7 @@ export default function AdminPortal({
       await fetch("/api/curriculum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(targetCourses)
+        body: JSON.stringify({ courses: targetCourses })
       }).catch(() => {});
       setAdminWebSaveSuccess(true);
       setTimeout(() => setAdminWebSaveSuccess(false), 5000);
