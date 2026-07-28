@@ -340,19 +340,55 @@ export default function SubjectHub({
           console.log("[PDF UPLOAD SUCCESS] Server saved file at:", fileUrl);
         }
       } else {
-        console.warn(`[PDF UPLOAD WARN] Server endpoint returned HTTP ${res.status}. Switching to client fallback...`);
+        console.warn(`[PDF UPLOAD WARN] Server endpoint returned HTTP ${res.status}. Trying JSON payload server upload...`);
       }
     } catch (apiErr) {
-      console.warn("[PDF UPLOAD WARN] Server endpoint unreachable (static hosting mode). Switching to client fallback:", apiErr);
+      console.warn("[PDF UPLOAD WARN] Server multipart endpoint error. Trying JSON payload fallback...", apiErr);
     }
 
-    // Client-side fallback if server API route is not available (e.g. Netlify static hosting)
+    // Step 3: Base64 JSON POST fallback to server endpoint to guarantee persistence on web
     if (!fileUrl) {
-      console.log("[PDF UPLOAD STEP 3: Client Encoding Fallback] Encoding file data URL / blob...");
+      try {
+        console.log("[PDF UPLOAD STEP 3: Base64 JSON Upload to Server] Converting file to data URL...");
+        const base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve((e.target?.result as string) || "");
+          reader.onerror = () => resolve("");
+          reader.readAsDataURL(file);
+        });
+
+        if (base64Data) {
+          const res = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: name,
+              fileType: file.type,
+              fileData: base64Data
+            })
+          });
+
+          if (res.ok) {
+            const uploadData = await res.json();
+            if (uploadData.fileUrl) {
+              fileUrl = uploadData.fileUrl;
+              fileId = uploadData.fileId;
+              console.log("[PDF UPLOAD BASE64 SUCCESS] Server saved file at:", fileUrl);
+            }
+          }
+        }
+      } catch (jsonErr) {
+        console.warn("[PDF UPLOAD WARN] Base64 server endpoint error:", jsonErr);
+      }
+    }
+
+    // Client-side base64 fallback only if server is totally offline
+    if (!fileUrl) {
+      console.log("[PDF UPLOAD STEP 4: Local Fallback] Encoding local DataURL...");
       fileUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve((e.target?.result as string) || "");
-        reader.onerror = () => resolve(URL.createObjectURL(file));
+        reader.onerror = () => resolve("");
         if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
           reader.readAsText(file);
         } else {

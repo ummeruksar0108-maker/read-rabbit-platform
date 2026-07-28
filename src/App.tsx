@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { initialCourses } from "./data";
 import { Course, Subject, Semester, Unit, StudyMaterial } from "./types";
@@ -159,31 +159,84 @@ export default function App() {
     alert("🥕 Welcome, Owner! The hidden entrance to the Administrator Portal is now unlocked.");
   };
 
-  // Fetch curriculum permanently from server on initial load
-  useEffect(() => {
-    fetch("/api/curriculum")
-      .then(res => {
-        if (!res.ok) throw new Error("Failed to fetch curriculum");
-        return res.json();
-      })
-      .then(data => {
+  // Sync status state for UI feedback
+  const [isSyncingServer, setIsSyncingServer] = useState(false);
+  const [lastSyncSuccessTime, setLastSyncSuccessTime] = useState<string>("");
+  const isInitialServerFetchDone = useRef(false);
+  const isFetchingFromServer = useRef(false);
+
+  // Helper function to fetch latest curriculum from server
+  const fetchCurriculumFromServer = async (isManualCall = false) => {
+    if (isManualCall) setIsSyncingServer(true);
+    isFetchingFromServer.current = true;
+    try {
+      const res = await fetch("/api/curriculum");
+      if (res.ok) {
+        const data = await res.json();
         if (data && Array.isArray(data) && data.length > 0) {
-          console.log("[CLIENT] Received permanent curriculum data from server:", data);
-          setCourses(data);
+          const serverJson = JSON.stringify(data);
+          setCourses((prevCourses) => {
+            if (JSON.stringify(prevCourses) !== serverJson) {
+              console.log("[LIVE CLOUD SYNC] Updated curriculum from server! New uploads synchronized.");
+              return data;
+            }
+            return prevCourses;
+          });
+          setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+          try {
+            localStorage.setItem("read_rabbit_curriculum_v2", serverJson);
+          } catch (e) {
+            // LocalStorage quota fallback
+          }
         }
-      })
-      .catch(err => {
-        console.warn("[CLIENT WARN] Server curriculum fetch error, using local state:", err);
-      });
+      }
+    } catch (err) {
+      console.warn("[CLOUD SYNC WARN] Server fetch error:", err);
+    } finally {
+      isInitialServerFetchDone.current = true;
+      setTimeout(() => {
+        isFetchingFromServer.current = false;
+        if (isManualCall) setIsSyncingServer(false);
+      }, 300);
+    }
+  };
+
+  // Fetch curriculum permanently from server on initial load + Polling every 6s + Window Focus listener
+  useEffect(() => {
+    fetchCurriculumFromServer();
+
+    // Background interval sync every 6s so other devices see new uploads live
+    const syncInterval = setInterval(() => {
+      fetchCurriculumFromServer();
+    }, 6000);
+
+    // Sync on tab re-focus
+    const handleWindowFocus = () => {
+      fetchCurriculumFromServer();
+    };
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
   }, []);
 
-  // Persist State Changes to Server and Local Storage (safely guarded)
+  // Persist State Changes to Server and Local Storage (safely guarded against overwrite races)
   useEffect(() => {
+    // DO NOT overwrite server curriculum until initial fetch from server has completed,
+    // or while currently applying data fetched from the server!
+    if (!isInitialServerFetchDone.current || isFetchingFromServer.current) {
+      return;
+    }
+
     // 1. Sync to server backend
     fetch("/api/curriculum", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ courses })
+    }).then(() => {
+      setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     }).catch(err => {
       console.warn("[CLIENT WARN] Failed to save curriculum to server:", err);
     });
@@ -705,6 +758,18 @@ export default function App() {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Cloud Server Live Sync Button */}
+            <button
+              onClick={() => fetchCurriculumFromServer(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/60 rounded-xl transition-all text-xs font-bold cursor-pointer active:scale-95 shadow-2xs"
+              title={`Synced with Web Cloud Server${lastSyncSuccessTime ? ` at ${lastSyncSuccessTime}` : ""}. Click to re-sync.`}
+            >
+              <RefreshCw size={13} className={`text-emerald-700 ${isSyncingServer ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">
+                {isSyncingServer ? "Syncing..." : "Cloud Synced"}
+              </span>
+            </button>
 
             {/* Profile badge */}
             <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-xl border border-[#dac1c1]/20 shadow-xs">

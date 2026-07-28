@@ -336,14 +336,47 @@ export default function AdminPortal({
         }
       }
     } catch (err) {
-      console.warn("[ADMIN UPLOAD WARN] Server endpoint unreachable, using client data URL encoding fallback:", err);
+      console.warn("[ADMIN UPLOAD WARN] Server endpoint error, trying base64 payload fallback:", err);
+    }
+
+    if (!fileUrl) {
+      try {
+        const base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve((e.target?.result as string) || "");
+          reader.onerror = () => resolve("");
+          reader.readAsDataURL(file);
+        });
+
+        if (base64Data) {
+          const res = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: name,
+              fileType: file.type,
+              fileData: base64Data
+            })
+          });
+
+          if (res.ok) {
+            const uploadData = await res.json();
+            if (uploadData.fileUrl) {
+              fileUrl = uploadData.fileUrl;
+              fileId = uploadData.fileId;
+            }
+          }
+        }
+      } catch (jsonErr) {
+        console.warn("[ADMIN UPLOAD WARN] Base64 server endpoint error:", jsonErr);
+      }
     }
 
     if (!fileUrl) {
       fileUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve((e.target?.result as string) || "");
-        reader.onerror = () => resolve(URL.createObjectURL(file));
+        reader.onerror = () => resolve("");
         if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
           reader.readAsText(file);
         } else {
