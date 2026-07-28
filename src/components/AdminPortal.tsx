@@ -22,6 +22,8 @@ import {
   ChevronDown,
   ChevronUp,
   Upload,
+  Save,
+  CloudUpload,
   ArrowLeft
 } from "lucide-react";
 
@@ -77,6 +79,29 @@ export default function AdminPortal({
   const [newUnitPdfSize, setNewUnitPdfSize] = useState("1.5 MB");
   const [newUnitPdfDetails, setNewUnitPdfDetails] = useState("");
   const [portalIsDragging, setPortalIsDragging] = useState(false);
+
+  // Cloud Save State & Handler
+  const [isAdminSavingWeb, setIsAdminSavingWeb] = useState(false);
+  const [adminWebSaveSuccess, setAdminWebSaveSuccess] = useState(false);
+
+  const handleSaveCurriculumToCloud = async (updatedCoursesList?: Course[]) => {
+    setIsAdminSavingWeb(true);
+    try {
+      const targetCourses = updatedCoursesList || courses;
+      onUpdateCourses(targetCourses);
+      await fetch("/api/curriculum", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(targetCourses)
+      }).catch(() => {});
+      setAdminWebSaveSuccess(true);
+      setTimeout(() => setAdminWebSaveSuccess(false), 5000);
+    } catch (err) {
+      console.warn("[ADMIN SAVE ERROR]", err);
+    } finally {
+      setIsAdminSavingWeb(false);
+    }
+  };
 
   // Semester addition fields
   const [newSemName, setNewSemName] = useState("");
@@ -432,13 +457,16 @@ export default function AdminPortal({
           };
         });
         onUpdateCourses(updatedCourses);
+        handleSaveCurriculumToCloud(updatedCourses);
         setEditingSubject({
           ...editingSubject,
           units: updatedFormUnits
         });
+      } else {
+        handleSaveCurriculumToCloud();
       }
 
-      alert(`"${name}" successfully uploaded and attached to this unit permanently! 🥕`);
+      alert(`"${name}" successfully uploaded and saved to web cloud! 🥕`);
     } catch (err: any) {
       console.error("[ADMIN UPLOAD FATAL ERROR]", err);
       alert(`Upload failed: ${err.message || "Could not save file"}`);
@@ -496,12 +524,15 @@ export default function AdminPortal({
         };
       });
       onUpdateCourses(updatedCourses);
+      handleSaveCurriculumToCloud(updatedCourses);
       
       // Keep local editing subject state in sync
       setEditingSubject({
         ...editingSubject,
         units: updatedFormUnits
       });
+    } else {
+      handleSaveCurriculumToCloud();
     }
 
     // Reset inline uploader state

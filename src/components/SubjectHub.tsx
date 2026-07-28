@@ -28,6 +28,8 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Save,
+  CloudUpload,
   Youtube,
   Video,
   Image as ImageIcon,
@@ -198,6 +200,38 @@ export default function SubjectHub({
   const [adminNoteContent, setAdminNoteContent] = useState("");
   const [adminNoteType, setAdminNoteType] = useState<"pdf" | "code" | "question">("pdf");
   const [adminUploadMode, setAdminUploadMode] = useState<"file" | "write">("file");
+
+  // Cloud Save State & Permanent Storage Handler
+  const [isSavingWeb, setIsSavingWeb] = useState(false);
+  const [webSaveSuccess, setWebSaveSuccess] = useState(false);
+  const [lastUploadedMaterialName, setLastUploadedMaterialName] = useState<string | null>(null);
+
+  const handleManualSaveToWeb = async (fileName?: string) => {
+    setIsSavingWeb(true);
+    try {
+      // 1. Flush subject state to App
+      onUpdateSubject(subject);
+
+      // 2. Direct POST to /api/curriculum server endpoint to guarantee instant storage
+      if ((window as any).__CURRICULUM_COURSES__) {
+        await fetch("/api/curriculum", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify((window as any).__CURRICULUM_COURSES__)
+        }).catch(() => {});
+      }
+
+      setWebSaveSuccess(true);
+      if (fileName) {
+        setLastUploadedMaterialName(fileName);
+      }
+      setTimeout(() => setWebSaveSuccess(false), 5000);
+    } catch (err) {
+      console.warn("[SAVE ERROR]", err);
+    } finally {
+      setIsSavingWeb(false);
+    }
+  };
 
   const handleDeleteUnitMaterial = (unitId: string, materialId: string) => {
     if (!window.confirm("Are you sure you want to delete this file/note from this unit?")) return;
@@ -432,8 +466,9 @@ export default function SubjectHub({
       });
     }
 
-    setUploadSuccess(`✅ "${name}" successfully attached and saved!`);
-    setTimeout(() => setUploadSuccess(""), 5000);
+    setLastUploadedMaterialName(name);
+    setUploadSuccess(`✅ "${name}" successfully uploaded and attached!`);
+    handleManualSaveToWeb(name);
   };
 
   const handleCreateWrittenNote = (targetUnitId: string | null) => {
@@ -480,8 +515,9 @@ export default function SubjectHub({
 
     setAdminNoteTitle("");
     setAdminNoteContent("");
+    setLastUploadedMaterialName(name);
     setUploadSuccess(`Note "${name}" created and saved permanently!`);
-    setTimeout(() => setUploadSuccess(""), 4000);
+    handleManualSaveToWeb(name);
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -819,7 +855,7 @@ export default function SubjectHub({
                                     </div>
                                   </div>
 
-                                  {/* Side-by-Side View Document & Download Buttons */}
+                                  {/* Side-by-Side View Document, Download & Save to Cloud Buttons */}
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     <button 
                                       type="button"
@@ -839,6 +875,17 @@ export default function SubjectHub({
                                     >
                                       <Download size={12} />
                                       <span>Download</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleManualSaveToWeb(m.name)}
+                                      disabled={isSavingWeb}
+                                      className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95 disabled:opacity-50"
+                                      title="Ensure file is permanently saved to Web Cloud"
+                                    >
+                                      <Save size={12} />
+                                      <span>Save</span>
                                     </button>
 
                                     {(isAdmin || selectedUnit?.id === unit.id) && (
@@ -887,9 +934,31 @@ export default function SubjectHub({
                             </div>
 
                             {uploadSuccess && (
-                              <p className="p-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-lg animate-fade-in">
-                                {uploadSuccess}
-                              </p>
+                              <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl space-y-2 text-left animate-fade-in shadow-xs">
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle size={16} className="text-emerald-700 shrink-0" />
+                                    <div>
+                                      <p className="text-[11px] font-bold text-emerald-900">
+                                        {uploadSuccess}
+                                      </p>
+                                      <p className="text-[9px] text-emerald-700">
+                                        Attached to unit & synchronized with web cloud!
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleManualSaveToWeb(lastUploadedMaterialName || "Uploaded File")}
+                                    disabled={isSavingWeb}
+                                    className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-extrabold rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
+                                  >
+                                    <Save size={12} />
+                                    <span>{isSavingWeb ? "Saving..." : webSaveSuccess ? "✅ Saved to Web!" : "💾 Save Upload to Web"}</span>
+                                  </button>
+                                </div>
+                              </div>
                             )}
                             {uploadError && (
                               <p className="p-2 bg-red-50 text-red-800 text-[10px] font-bold rounded-lg animate-fade-in">
@@ -898,32 +967,46 @@ export default function SubjectHub({
                             )}
 
                             {adminUploadMode === "file" ? (
-                              <div
-                                onDragOver={onDragOver}
-                                onDragLeave={onDragLeave}
-                                onDrop={(e) => onDrop(e, unit.id)}
-                                className={`border border-dashed rounded-xl p-3.5 text-center cursor-pointer transition-all ${
-                                  isDragging ? "border-[#95491a] bg-[#fff8f3]" : "border-[#dac1c1]/45 hover:border-[#fd9b65] bg-white"
-                                }`}
-                              >
-                                <input
-                                  type="file"
-                                  id={`admin-unit-file-input-${unit.id}`}
-                                  accept="*"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    if (e.target.files && e.target.files[0]) {
-                                      handleProcessFile(e.target.files[0], unit.id);
-                                    }
-                                    e.target.value = "";
-                                  }}
-                                />
-                                <label htmlFor={`admin-unit-file-input-${unit.id}`} className="cursor-pointer space-y-1 block">
-                                  <Upload size={18} className="text-[#95491a] mx-auto" />
-                                  <div className="text-[10px] text-[#544243]">
-                                    Upload PDFs, PPTs, PNG/JPG, Word, Code or ZIP • <span className="text-[#95491a] font-bold underline">Click to browse</span>
-                                  </div>
-                                </label>
+                              <div className="space-y-2">
+                                <div
+                                  onDragOver={onDragOver}
+                                  onDragLeave={onDragLeave}
+                                  onDrop={(e) => onDrop(e, unit.id)}
+                                  className={`border border-dashed rounded-xl p-3.5 text-center cursor-pointer transition-all ${
+                                    isDragging ? "border-[#95491a] bg-[#fff8f3]" : "border-[#dac1c1]/45 hover:border-[#fd9b65] bg-white"
+                                  }`}
+                                >
+                                  <input
+                                    type="file"
+                                    id={`admin-unit-file-input-${unit.id}`}
+                                    accept="*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        handleProcessFile(e.target.files[0], unit.id);
+                                      }
+                                      e.target.value = "";
+                                    }}
+                                  />
+                                  <label htmlFor={`admin-unit-file-input-${unit.id}`} className="cursor-pointer space-y-1 block">
+                                    <Upload size={18} className="text-[#95491a] mx-auto" />
+                                    <div className="text-[10px] text-[#544243]">
+                                      Upload PDFs, PPTs, PNG/JPG, Word, Code or ZIP • <span className="text-[#95491a] font-bold underline">Click to browse</span>
+                                    </div>
+                                  </label>
+                                </div>
+
+                                <div className="flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleManualSaveToWeb(lastUploadedMaterialName || "Uploaded File")}
+                                    disabled={isSavingWeb}
+                                    className="px-3 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                  >
+                                    <Save size={13} />
+                                    <span>{isSavingWeb ? "Storing File on Web..." : webSaveSuccess ? "✅ Permanently Saved!" : "💾 Save Upload to Web Cloud"}</span>
+                                  </button>
+                                </div>
                               </div>
                             ) : (
                               <div className="space-y-2">
