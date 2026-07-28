@@ -27,7 +27,12 @@ import {
   Eye,
   Copy,
   Check,
-  ExternalLink
+  ExternalLink,
+  Youtube,
+  Video,
+  Image as ImageIcon,
+  Presentation,
+  FileSpreadsheet
 } from "lucide-react";
 
 interface SubjectHubProps {
@@ -37,6 +42,13 @@ interface SubjectHubProps {
   isAdmin: boolean;
   onBackToSubjects: () => void;
   onUpdateSubject: (updatedSubject: Subject) => void;
+}
+
+function getYouTubeVideoId(url: string): string | null {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
 }
 
 export default function SubjectHub({
@@ -60,6 +72,19 @@ export default function SubjectHub({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [quizScore, setQuizScore] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
+
+  // Unit Sub-Tab State (notes | questions | youtube)
+  const [unitActiveTab, setUnitActiveTab] = useState<Record<string, "notes" | "questions" | "youtube">>({});
+  
+  // YouTube Form State
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytUrl, setYtUrl] = useState("");
+
+  // Important Question Form State
+  const [qText, setQText] = useState("");
+  const [qAnswer, setQAnswer] = useState("");
+  const [qImportance, setQImportance] = useState<"High" | "Medium" | "Low">("High");
+  const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
 
   // History sync helper for SubjectHub modals
   const openMaterial = (mat: StudyMaterial) => {
@@ -178,15 +203,78 @@ export default function SubjectHub({
     });
   };
 
+  const handleAddYoutubeLink = (unitId: string) => {
+    if (!ytUrl.trim()) return;
+    const newYt = {
+      id: "yt_" + Date.now(),
+      title: ytTitle.trim() || "YouTube Video Reference",
+      url: ytUrl.trim(),
+      channelName: "Academic Lecture Video"
+    };
+    const updatedUnits = subject.units.map(u => {
+      if (u.id !== unitId) return u;
+      return {
+        ...u,
+        youtubeLinks: [...(u.youtubeLinks || []), newYt]
+      };
+    });
+    onUpdateSubject({ ...subject, units: updatedUnits });
+    setYtTitle("");
+    setYtUrl("");
+  };
+
+  const handleDeleteYoutubeLink = (unitId: string, ytId: string) => {
+    const updatedUnits = subject.units.map(u => {
+      if (u.id !== unitId) return u;
+      return {
+        ...u,
+        youtubeLinks: (u.youtubeLinks || []).filter(y => y.id !== ytId)
+      };
+    });
+    onUpdateSubject({ ...subject, units: updatedUnits });
+  };
+
+  const handleAddImportantQuestion = (unitId: string) => {
+    if (!qText.trim()) return;
+    const newQ = {
+      id: "q_" + Date.now(),
+      question: qText.trim(),
+      answer: qAnswer.trim() || "Refer to unit study notes for step-by-step solution.",
+      importance: qImportance,
+      yearTag: "High Yield Exam Topic"
+    };
+    const updatedUnits = subject.units.map(u => {
+      if (u.id !== unitId) return u;
+      return {
+        ...u,
+        importantQuestions: [...(u.importantQuestions || []), newQ]
+      };
+    });
+    onUpdateSubject({ ...subject, units: updatedUnits });
+    setQText("");
+    setQAnswer("");
+  };
+
+  const handleDeleteImportantQuestion = (unitId: string, qId: string) => {
+    const updatedUnits = subject.units.map(u => {
+      if (u.id !== unitId) return u;
+      return {
+        ...u,
+        importantQuestions: (u.importantQuestions || []).filter(q => q.id !== qId)
+      };
+    });
+    onUpdateSubject({ ...subject, units: updatedUnits });
+  };
+
   const handleProcessFile = async (file: File, targetUnitId: string | null) => {
     setUploadError("");
     setUploadSuccess("");
     if (!file) {
-      console.error("[PDF UPLOAD STEP 1 ERROR] No file provided to handleProcessFile");
+      console.error("[UPLOAD ERROR] No file provided to handleProcessFile");
       return;
     }
 
-    console.log(`[PDF UPLOAD STEP 1: File Selected] Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`);
+    console.log(`[UPLOAD FILE SELECTED] Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`);
 
     let sizeStr = "";
     if (file.size >= 1024 * 1024) {
@@ -197,85 +285,100 @@ export default function SubjectHub({
 
     const name = file.name;
     const ext = name.split(".").pop()?.toLowerCase() || "";
-    let type: "pdf" | "code" | "question" = "pdf";
-    if (["js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json", "sh", "txt"].includes(ext)) {
+    let type: StudyMaterial["type"] = "other";
+    if (ext === "pdf") {
+      type = "pdf";
+    } else if (["ppt", "pptx", "pps"].includes(ext)) {
+      type = "ppt";
+    } else if (["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"].includes(ext)) {
+      type = "image";
+    } else if (["doc", "docx", "xls", "xlsx", "txt", "md", "rtf", "odt"].includes(ext)) {
+      type = "doc";
+    } else if (["js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "cs", "html", "css", "json", "sql", "sh"].includes(ext)) {
       type = "code";
     }
 
-    setUploadSuccess(`[Uploading 0%] Preparing streaming upload for "${name}"...`);
+    setUploadSuccess(`[Uploading] Processing "${name}" (${sizeStr})...`);
+
+    let fileUrl = "";
+    let fileId = "";
 
     try {
-      // Step 2: Construct FormData binary stream payload
-      console.log(`[PDF UPLOAD STEP 2: FormData Construction] Packaging binary stream payload...`);
+      console.log(`[PDF UPLOAD STEP 2: Server API Request] POSTing /api/upload...`);
       const formData = new FormData();
       formData.append("file", file);
-
-      // Step 3: Fetch API /api/upload
-      console.log(`[PDF UPLOAD STEP 3: API Request] Sending POST request to /api/upload...`);
-      setUploadSuccess(`[Uploading 50%] Transferring "${name}" (${sizeStr}) to permanent storage...`);
 
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
-      console.log(`[PDF UPLOAD STEP 4: HTTP Status] Response received: ${res.status} ${res.statusText}`);
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        console.error(`[PDF UPLOAD STEP 4 ERROR] Server returned error response:`, errData);
-        throw new Error(errData.error || `Server responded with HTTP ${res.status}`);
-      }
-
-      const uploadData = await res.json();
-      console.log("[PDF UPLOAD STEP 5: Server Saved] Success response:", uploadData);
-
-      if (!uploadData.fileUrl) {
-        throw new Error("Server succeeded but did not return a valid fileUrl");
-      }
-
-      const fileUrl = uploadData.fileUrl;
-
-      const newMaterial: StudyMaterial = {
-        id: uploadData.fileId || ("mat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 5)),
-        name: name,
-        size: sizeStr,
-        addedTime: "Uploaded by Admin",
-        type: type,
-        isBookmarked: false,
-        tag: targetUnitId ? "Unit File" : "Subject File",
-        details: fileUrl
-      };
-
-      // Step 6: Update State and sync curriculum
-      console.log("[PDF UPLOAD STEP 6: State Sync] Updating subject state and curriculum...");
-      if (targetUnitId) {
-        const updatedUnits = subject.units.map(unit => {
-          if (unit.id !== targetUnitId) return unit;
-          return {
-            ...unit,
-            materials: [...(unit.materials || []), newMaterial]
-          };
-        });
-        onUpdateSubject({
-          ...subject,
-          units: updatedUnits
-        });
+      if (res.ok) {
+        const uploadData = await res.json();
+        if (uploadData.fileUrl) {
+          fileUrl = uploadData.fileUrl;
+          fileId = uploadData.fileId;
+          console.log("[PDF UPLOAD SUCCESS] Server saved file at:", fileUrl);
+        }
       } else {
-        onUpdateSubject({
-          ...subject,
-          materials: [...(subject.materials || []), newMaterial]
-        });
+        console.warn(`[PDF UPLOAD WARN] Server endpoint returned HTTP ${res.status}. Switching to client fallback...`);
       }
-
-      console.log(`[PDF UPLOAD SUCCESS COMPLETE] File "${name}" is attached and live at ${fileUrl}`);
-      setUploadSuccess(`✅ "${name}" successfully uploaded & saved permanently across all devices!`);
-      setTimeout(() => setUploadSuccess(""), 5000);
-    } catch (apiErr: any) {
-      console.error("[PDF UPLOAD FATAL ERROR]", apiErr);
-      setUploadError(`❌ Upload failed: ${apiErr.message || "Could not save file to server"}`);
-      setUploadSuccess("");
+    } catch (apiErr) {
+      console.warn("[PDF UPLOAD WARN] Server endpoint unreachable (static hosting mode). Switching to client fallback:", apiErr);
     }
+
+    // Client-side fallback if server API route is not available (e.g. Netlify static hosting)
+    if (!fileUrl) {
+      console.log("[PDF UPLOAD STEP 3: Client Encoding Fallback] Encoding file data URL / blob...");
+      fileUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve((e.target?.result as string) || "");
+        reader.onerror = () => resolve(URL.createObjectURL(file));
+        if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
+          reader.readAsText(file);
+        } else {
+          reader.readAsDataURL(file);
+        }
+      });
+    }
+
+    if (!fileId) {
+      fileId = "mat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+    }
+
+    const newMaterial: StudyMaterial = {
+      id: fileId,
+      name: name,
+      size: sizeStr,
+      addedTime: "Uploaded by Admin",
+      type: type,
+      isBookmarked: false,
+      tag: targetUnitId ? "Unit File" : "Subject File",
+      details: fileUrl
+    };
+
+    // Update State and sync curriculum
+    if (targetUnitId) {
+      const updatedUnits = subject.units.map(unit => {
+        if (unit.id !== targetUnitId) return unit;
+        return {
+          ...unit,
+          materials: [...(unit.materials || []), newMaterial]
+        };
+      });
+      onUpdateSubject({
+        ...subject,
+        units: updatedUnits
+      });
+    } else {
+      onUpdateSubject({
+        ...subject,
+        materials: [...(subject.materials || []), newMaterial]
+      });
+    }
+
+    setUploadSuccess(`✅ "${name}" successfully attached and saved!`);
+    setTimeout(() => setUploadSuccess(""), 5000);
   };
 
   const handleCreateWrittenNote = (targetUnitId: string | null) => {
@@ -572,175 +675,470 @@ export default function SubjectHub({
                     </div>
                   )}
 
-                  {/* Unit Materials Preview & Direct Tile Access */}
-                  <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-extrabold text-[#95491a] tracking-wider uppercase flex items-center gap-1">
-                        📂 Attached Unit Files ({(unit.materials || []).length}):
-                      </span>
-                      <span className="text-[10px] text-[#95491a] font-bold hover:underline">
-                        {selectedUnit?.id === unit.id ? "Click to Collapse" : "Click to Manage"}
-                      </span>
+                  {/* Unit Content Sub-Tabs (Notes, Important Questions, YouTube References) */}
+                  <div className="mt-4 pt-4 border-t border-gray-100 space-y-4" onClick={(e) => e.stopPropagation()}>
+                    {/* Sub-Tab Navigation Pills */}
+                    <div className="flex gap-1.5 p-1 bg-[#fff8f3] rounded-2xl border border-[#dac1c1]/30 overflow-x-auto">
+                      <button
+                        type="button"
+                        onClick={() => setUnitActiveTab(prev => ({ ...prev, [unit.id]: "notes" }))}
+                        className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          (unitActiveTab[unit.id] || "notes") === "notes"
+                            ? "bg-[#40010d] text-white shadow-xs"
+                            : "text-[#544243] hover:bg-white/60"
+                        }`}
+                      >
+                        <FileText size={13} />
+                        <span>Notes & Files ({(unit.materials || []).length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUnitActiveTab(prev => ({ ...prev, [unit.id]: "questions" }))}
+                        className={`flex-1 min-w-[120px] py-1.5 px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          unitActiveTab[unit.id] === "questions"
+                            ? "bg-[#40010d] text-white shadow-xs"
+                            : "text-[#544243] hover:bg-white/60"
+                        }`}
+                      >
+                        <HelpCircle size={13} />
+                        <span>Imp. Questions ({(unit.importantQuestions || []).length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUnitActiveTab(prev => ({ ...prev, [unit.id]: "youtube" }))}
+                        className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          unitActiveTab[unit.id] === "youtube"
+                            ? "bg-[#40010d] text-white shadow-xs"
+                            : "text-[#544243] hover:bg-white/60"
+                        }`}
+                      >
+                        <Youtube size={13} className="text-red-500 shrink-0" />
+                        <span>YouTube Videos ({(unit.youtubeLinks || []).length})</span>
+                      </button>
                     </div>
 
-                    {(!unit.materials || unit.materials.length === 0) ? (
-                      <p className="text-[11px] text-[#877272] italic bg-[#fff8f3] p-3 rounded-xl border border-[#dac1c1]/20 text-left">
-                        No customized files attached to this unit yet.
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {unit.materials.map((m) => {
-                          const isCode = m.type === "code";
-                          const isPdf = m.type === "pdf" || m.name.toLowerCase().endsWith(".pdf");
-                          return (
-                            <div 
-                              key={m.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openMaterial(m);
-                              }}
-                              className="p-3 bg-[#fff8f3]/80 hover:bg-[#ffebd6] rounded-xl border border-[#dac1c1]/30 flex justify-between items-center transition-all cursor-pointer group/file"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                  isPdf ? "bg-red-100 text-red-600" : isCode ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-700"
-                                }`}>
-                                  {isCode ? <Terminal size={14} /> : <FileText size={14} />}
-                                </div>
-                                <div className="text-left min-w-0">
-                                  <h5 className="font-bold text-xs text-[#40010d] truncate group-hover/file:text-[#95491a]">
-                                    {m.name}
-                                  </h5>
-                                  <p className="text-[10px] text-gray-500 mt-0.5">
-                                    {m.size} • Tap to view in-app
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                <button 
-                                  onClick={() => openMaterial(m)}
-                                  className="px-3 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
+                    {/* SUB-TAB 1: NOTES & STUDY FILES */}
+                    {(unitActiveTab[unit.id] || "notes") === "notes" && (
+                      <div className="space-y-3 animate-fade-in">
+                        {(!unit.materials || unit.materials.length === 0) ? (
+                          <p className="text-[11px] text-[#877272] italic bg-[#fff8f3] p-3 rounded-xl border border-[#dac1c1]/20 text-left">
+                            No study files attached to Unit {unit.number} yet. Use the upload dropzone below to attach PDFs, PPTs, Images, Word docs or Code!
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {unit.materials.map((m) => {
+                              const isCode = m.type === "code";
+                              const isPdf = m.type === "pdf" || m.name.toLowerCase().endsWith(".pdf");
+                              const isPpt = m.type === "ppt" || /\.(ppt|pptx)$/i.test(m.name);
+                              const isImg = m.type === "image" || /\.(png|jpe?g|gif|webp|svg)$/i.test(m.name);
+                              const isDoc = m.type === "doc" || /\.(doc|docx|txt|md)$/i.test(m.name);
+
+                              return (
+                                <div 
+                                  key={m.id}
+                                  className="p-3 bg-[#fff8f3]/90 hover:bg-[#ffebd6] rounded-xl border border-[#dac1c1]/30 flex flex-wrap justify-between items-center transition-all gap-2 group/file"
                                 >
-                                  <Eye size={12} />
-                                  {isPdf ? "View PDF" : isCode ? "View Code" : "View Notes"}
-                                </button>
-                                {isAdmin && selectedUnit?.id === unit.id && (
-                                  <button
-                                    onClick={() => handleDeleteUnitMaterial(unit.id, m.id)}
-                                    className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
-                                    title="Delete File Permanently"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                )}
-                              </div>
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                      isPdf ? "bg-red-100 text-red-600" :
+                                      isPpt ? "bg-orange-100 text-orange-600" :
+                                      isImg ? "bg-purple-100 text-purple-600" :
+                                      isDoc ? "bg-emerald-100 text-emerald-600" :
+                                      isCode ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-700"
+                                    }`}>
+                                      {isPdf ? <FileText size={15} /> :
+                                       isPpt ? <Presentation size={15} /> :
+                                       isImg ? <ImageIcon size={15} /> :
+                                       isDoc ? <FileText size={15} /> :
+                                       isCode ? <Terminal size={15} /> : <BookOpen size={15} />}
+                                    </div>
+                                    <div className="text-left min-w-0">
+                                      <h5 className="font-bold text-xs text-[#40010d] truncate group-hover/file:text-[#95491a]">
+                                        {m.name}
+                                      </h5>
+                                      <p className="text-[10px] text-gray-500 mt-0.5">
+                                        {m.size} • {m.type.toUpperCase()} file
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Side-by-Side View Document & Download Buttons */}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button 
+                                      type="button"
+                                      onClick={() => openMaterial(m)}
+                                      className="px-2.5 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
+                                      title="View document inside app"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View Document</span>
+                                    </button>
+
+                                    <button 
+                                      type="button"
+                                      onClick={() => handleDownloadFile(m)}
+                                      className="px-2.5 py-1.5 bg-[#f8e6cb] hover:bg-[#fd9b65] text-[#95491a] hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
+                                      title="Download file directly to device"
+                                    >
+                                      <Download size={12} />
+                                      <span>Download</span>
+                                    </button>
+
+                                    {(isAdmin || selectedUnit?.id === unit.id) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteUnitMaterial(unit.id, m.id)}
+                                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                                        title="Delete File"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* File Upload Dropzone / Quick Add */}
+                        {selectedUnit?.id === unit.id && (
+                          <div className="mt-3 p-3.5 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-3 text-left">
+                            <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
+                              ➕ Attach File or Notes to Unit {unit.number}
+                            </span>
+                            
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setAdminUploadMode("file")}
+                                className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                  adminUploadMode === "file" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
+                                }`}
+                              >
+                                Upload Any File (PDF, PPT, Image, Word, Code)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAdminUploadMode("write")}
+                                className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                  adminUploadMode === "write" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
+                                }`}
+                              >
+                                Write Custom Notes
+                              </button>
                             </div>
-                          );
-                        })}
+
+                            {uploadSuccess && (
+                              <p className="p-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-lg animate-fade-in">
+                                {uploadSuccess}
+                              </p>
+                            )}
+                            {uploadError && (
+                              <p className="p-2 bg-red-50 text-red-800 text-[10px] font-bold rounded-lg animate-fade-in">
+                                {uploadError}
+                              </p>
+                            )}
+
+                            {adminUploadMode === "file" ? (
+                              <div
+                                onDragOver={onDragOver}
+                                onDragLeave={onDragLeave}
+                                onDrop={(e) => onDrop(e, unit.id)}
+                                className={`border border-dashed rounded-xl p-3.5 text-center cursor-pointer transition-all ${
+                                  isDragging ? "border-[#95491a] bg-[#fff8f3]" : "border-[#dac1c1]/45 hover:border-[#fd9b65] bg-white"
+                                }`}
+                              >
+                                <input
+                                  type="file"
+                                  id={`admin-unit-file-input-${unit.id}`}
+                                  accept="*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleProcessFile(e.target.files[0], unit.id);
+                                    }
+                                    e.target.value = "";
+                                  }}
+                                />
+                                <label htmlFor={`admin-unit-file-input-${unit.id}`} className="cursor-pointer space-y-1 block">
+                                  <Upload size={18} className="text-[#95491a] mx-auto" />
+                                  <div className="text-[10px] text-[#544243]">
+                                    Upload PDFs, PPTs, PNG/JPG, Word, Code or ZIP • <span className="text-[#95491a] font-bold underline">Click to browse</span>
+                                  </div>
+                                </label>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Notes Title (e.g. Unit 1 Quick Formula Sheet)"
+                                    value={adminNoteTitle}
+                                    onChange={(e) => setAdminNoteTitle(e.target.value)}
+                                    className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none"
+                                  />
+                                  <select
+                                    value={adminNoteType}
+                                    onChange={(e) => setAdminNoteType(e.target.value as any)}
+                                    className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2 py-1.5 text-[10px] focus:outline-none"
+                                  >
+                                    <option value="pdf">Document / PDF Notes</option>
+                                    <option value="code">Code Snippet</option>
+                                    <option value="question">Question Bank</option>
+                                  </select>
+                                </div>
+                                <textarea
+                                  rows={2}
+                                  placeholder="Enter notes content or paste study code..."
+                                  value={adminNoteContent}
+                                  onChange={(e) => setAdminNoteContent(e.target.value)}
+                                  className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg p-2 text-[10px] focus:outline-none font-sans"
+                                />
+                                <div className="flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCreateWrittenNote(unit.id)}
+                                    className="px-3 py-1 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[9px] font-bold cursor-pointer transition-colors"
+                                  >
+                                    Save Notes to Unit
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* Admin Upload Panel when unit is expanded */}
-                    {selectedUnit?.id === unit.id && isAdmin && (
-                      <div className="mt-4 p-4 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-3 text-left" onClick={(e) => e.stopPropagation()}>
-                        <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
-                          ➕ Quick Attach File or Notes to Unit {unit.number}
-                        </span>
-                        
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setAdminUploadMode("file")}
-                            className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                              adminUploadMode === "file" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
-                            }`}
-                          >
-                            Upload File
-                          </button>
-                          <button
-                            onClick={() => setAdminUploadMode("write")}
-                            className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                              adminUploadMode === "write" ? "bg-[#40010d] text-white" : "bg-slate-100 text-gray-500 hover:bg-slate-200"
-                            }`}
-                          >
-                            Write Notes
-                          </button>
-                        </div>
-
-                        {uploadSuccess && (
-                          <p className="p-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-lg animate-fade-in">
-                            {uploadSuccess}
-                          </p>
-                        )}
-                        {uploadError && (
-                          <p className="p-2 bg-red-50 text-red-800 text-[10px] font-bold rounded-lg animate-fade-in">
-                            {uploadError}
-                          </p>
-                        )}
-
-                        {adminUploadMode === "file" ? (
-                          <div
-                            onDragOver={onDragOver}
-                            onDragLeave={onDragLeave}
-                            onDrop={(e) => onDrop(e, unit.id)}
-                            className={`border border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
-                              isDragging ? "border-[#95491a] bg-[#fff8f3]" : "border-[#dac1c1]/45 hover:border-[#fd9b65] bg-white"
-                            }`}
-                          >
-                            <input
-                              type="file"
-                              id={`admin-unit-file-input-${unit.id}`}
-                              className="hidden"
-                              onChange={(e) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  handleProcessFile(e.target.files[0], unit.id);
-                                }
-                              }}
-                            />
-                            <label htmlFor={`admin-unit-file-input-${unit.id}`} className="cursor-pointer space-y-1 block">
-                              <Upload size={18} className="text-[#95491a] mx-auto" />
-                              <div className="text-[10px] text-[#544243]">
-                                Drag & Drop or <span className="text-[#95491a] font-bold underline">click to browse</span>
-                              </div>
-                            </label>
+                    {/* SUB-TAB 2: IMPORTANT QUESTIONS */}
+                    {unitActiveTab[unit.id] === "questions" && (
+                      <div className="space-y-3 animate-fade-in text-left">
+                        {(!unit.importantQuestions || unit.importantQuestions.length === 0) ? (
+                          <div className="p-3.5 bg-[#fff8f3] rounded-2xl border border-[#dac1c1]/30 space-y-2">
+                            <p className="text-[11px] font-bold text-[#40010d]">
+                              🎯 Core High-Yield Exam Questions for Unit {unit.number}:
+                            </p>
+                            <div className="p-3 bg-white rounded-xl border border-amber-200/60 space-y-1">
+                              <span className="text-[9px] font-extrabold px-2 py-0.5 bg-red-100 text-red-700 rounded-md inline-block">
+                                Repeated University Exam Q
+                              </span>
+                              <h5 className="font-bold text-xs text-[#231a0a]">
+                                Q1: Define the core operational lifecycle and fundamental architecture of {unit.name}.
+                              </h5>
+                              <p className="text-[11px] text-[#544243] leading-relaxed pt-1 border-t border-dashed border-gray-100">
+                                <strong>Key Answer Points:</strong> Highlight theoretical definitions, operational workflows, structural diagrams, and practical examples for full marks in exams.
+                              </p>
+                            </div>
                           </div>
                         ) : (
-                          <div className="space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                placeholder="Notes Title (e.g. Unit Notes)"
-                                value={adminNoteTitle}
-                                onChange={(e) => setAdminNoteTitle(e.target.value)}
-                                className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none"
-                              />
-                              <select
-                                value={adminNoteType}
-                                onChange={(e) => setAdminNoteType(e.target.value as any)}
-                                className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg px-2 py-1.5 text-[10px] focus:outline-none"
-                              >
-                                <option value="pdf">Document / PDF</option>
-                                <option value="code">Code Snippet</option>
-                                <option value="question">Question Bank</option>
-                              </select>
-                            </div>
-                            <textarea
-                              rows={2}
-                              placeholder="Enter notes content or paste code..."
-                              value={adminNoteContent}
-                              onChange={(e) => setAdminNoteContent(e.target.value)}
-                              className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-lg p-2 text-[10px] focus:outline-none font-sans"
-                            />
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => handleCreateWrittenNote(unit.id)}
-                                className="px-3 py-1 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-lg text-[9px] font-bold cursor-pointer transition-colors"
-                              >
-                                Save to Unit
-                              </button>
-                            </div>
+                          <div className="space-y-2.5">
+                            {unit.importantQuestions.map((q, qIdx) => (
+                              <div key={q.id} className="p-3.5 bg-[#fff8f3]/90 hover:bg-[#ffebd6] rounded-2xl border border-[#dac1c1]/30 transition-all space-y-2">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] font-extrabold px-2 py-0.5 bg-[#40010d] text-white rounded-md">
+                                        Q{qIdx + 1}
+                                      </span>
+                                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md ${
+                                        q.importance === "High" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"
+                                      }`}>
+                                        {q.importance || "High"} Importance
+                                      </span>
+                                      {q.yearTag && (
+                                        <span className="text-[9px] text-[#95491a] bg-[#fff2e1] px-2 py-0.5 rounded-md font-bold">
+                                          {q.yearTag}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h5 className="font-bold text-xs text-[#40010d] leading-snug">
+                                      {q.question}
+                                    </h5>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteImportantQuestion(unit.id, q.id)}
+                                    className="p-1 text-red-500 hover:text-red-700 rounded-lg shrink-0 cursor-pointer"
+                                    title="Delete Question"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+
+                                {q.answer && (
+                                  <div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenQuestionId(openQuestionId === q.id ? null : q.id)}
+                                      className="text-[10px] font-bold text-[#95491a] hover:underline flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <span>{openQuestionId === q.id ? "Hide Answer / Solution ▲" : "Show Answer / Solution ▼"}</span>
+                                    </button>
+
+                                    {openQuestionId === q.id && (
+                                      <div className="mt-2 p-3 bg-white rounded-xl border border-amber-200 text-[11px] text-[#231a0a] leading-relaxed whitespace-pre-wrap font-sans">
+                                        {q.answer}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         )}
+
+                        {/* Form to add Important Question */}
+                        <div className="mt-3 p-3 bg-[#fffcf9] rounded-2xl border border-dashed border-[#fd9b65] space-y-2">
+                          <span className="text-[10px] font-extrabold text-[#40010d] uppercase block">
+                            ➕ Add Important Question for Unit {unit.number}
+                          </span>
+                          <input
+                            type="text"
+                            placeholder="Type exam question here..."
+                            value={qText}
+                            onChange={(e) => setQText(e.target.value)}
+                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-xl px-3 py-1.5 text-xs focus:outline-none"
+                          />
+                          <textarea
+                            rows={2}
+                            placeholder="Type solution or step-by-step answer key..."
+                            value={qAnswer}
+                            onChange={(e) => setQAnswer(e.target.value)}
+                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-xl p-2.5 text-xs focus:outline-none font-sans"
+                          />
+                          <div className="flex justify-between items-center pt-1">
+                            <select
+                              value={qImportance}
+                              onChange={(e) => setQImportance(e.target.value as any)}
+                              className="bg-white border border-[#dac1c1]/40 rounded-lg text-[10px] px-2 py-1 focus:outline-none font-bold text-[#544243]"
+                            >
+                              <option value="High">High Importance (Repeated)</option>
+                              <option value="Medium">Medium Importance</option>
+                              <option value="Low">Low / Optional</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleAddImportantQuestion(unit.id)}
+                              className="px-3.5 py-1.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-xl text-[10px] font-bold cursor-pointer transition-all shadow-xs"
+                            >
+                              Save Important Question
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SUB-TAB 3: YOUTUBE VIDEO REFERENCES */}
+                    {unitActiveTab[unit.id] === "youtube" && (
+                      <div className="space-y-3 animate-fade-in text-left">
+                        {(!unit.youtubeLinks || unit.youtubeLinks.length === 0) ? (
+                          <div className="p-4 bg-[#fff8f3] rounded-2xl border border-[#dac1c1]/30 text-center space-y-2">
+                            <Youtube size={28} className="text-red-500 mx-auto" />
+                            <p className="text-xs font-bold text-[#40010d]">
+                              No YouTube video references attached to Unit {unit.number} yet.
+                            </p>
+                            <p className="text-[10px] text-[#877272]">
+                              Add YouTube video lecture links below so students can watch visual explanations!
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {unit.youtubeLinks.map((yt) => {
+                              const ytId = getYouTubeVideoId(yt.url);
+                              const thumbUrl = ytId 
+                                ? `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`
+                                : "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400&auto=format&fit=crop&q=60";
+
+                              return (
+                                <div key={yt.id} className="bg-white rounded-2xl border border-[#dac1c1]/30 overflow-hidden shadow-xs flex flex-col justify-between hover:shadow-md transition-all group">
+                                  <div className="relative aspect-video bg-black overflow-hidden">
+                                    <img 
+                                      src={thumbUrl} 
+                                      alt={yt.title}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center">
+                                      <div className="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                        <Play size={18} className="fill-white ml-0.5" />
+                                      </div>
+                                    </div>
+                                    <span className="absolute bottom-2 right-2 bg-black/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                      YouTube
+                                    </span>
+                                  </div>
+
+                                  <div className="p-3 space-y-2 flex-1 flex flex-col justify-between">
+                                    <div>
+                                      <h5 className="font-bold text-xs text-[#40010d] line-clamp-2 leading-snug group-hover:text-[#95491a]">
+                                        {yt.title}
+                                      </h5>
+                                      <span className="text-[10px] text-gray-500 block mt-1">
+                                        {yt.channelName || "Curated Lecture Reference"}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-2 border-t border-gray-100 gap-2">
+                                      <a
+                                        href={yt.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                                      >
+                                        <Youtube size={13} />
+                                        <span>Watch on YouTube ↗</span>
+                                      </a>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteYoutubeLink(unit.id, yt.id)}
+                                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                                        title="Remove Video Reference"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Form to add YouTube Video Reference */}
+                        <div className="mt-3 p-3.5 bg-[#fffcf9] rounded-2xl border border-dashed border-red-300 space-y-2">
+                          <span className="text-[10px] font-extrabold text-[#40010d] uppercase flex items-center gap-1">
+                            <Youtube size={14} className="text-red-500" />
+                            Attach YouTube Video Reference to Unit {unit.number}
+                          </span>
+                          <input
+                            type="text"
+                            placeholder="Video Title (e.g. Unit 1 Complete One-Shot Lecture)"
+                            value={ytTitle}
+                            onChange={(e) => setYtTitle(e.target.value)}
+                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-red-400 rounded-xl px-3 py-1.5 text-xs focus:outline-none"
+                          />
+                          <input
+                            type="url"
+                            placeholder="Paste YouTube Video URL (e.g. https://www.youtube.com/watch?v=...)"
+                            value={ytUrl}
+                            onChange={(e) => setYtUrl(e.target.value)}
+                            className="w-full bg-white border border-[#dac1c1]/40 focus:border-red-400 rounded-xl px-3 py-1.5 text-xs focus:outline-none font-mono"
+                          />
+                          <div className="flex justify-end pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleAddYoutubeLink(unit.id)}
+                              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1"
+                            >
+                              <Plus size={13} />
+                              <span>Add YouTube Video</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -817,11 +1215,13 @@ export default function SubjectHub({
                     <input
                       type="file"
                       id="admin-subject-file-input"
+                      accept="application/pdf,.pdf,image/*,.doc,.docx,.txt,.ppt,.pptx,.code,.js,.py,.zip"
                       className="hidden"
                       onChange={(e) => {
                         if (e.target.files && e.target.files[0]) {
                           handleProcessFile(e.target.files[0], null);
                         }
+                        e.target.value = "";
                       }}
                     />
                     <label htmlFor="admin-subject-file-input" className="cursor-pointer space-y-2 block">

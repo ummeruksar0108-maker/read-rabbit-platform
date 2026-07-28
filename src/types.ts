@@ -1,3 +1,19 @@
+export interface ImportantQuestion {
+  id: string;
+  question: string;
+  answer?: string;
+  importance?: "High" | "Medium" | "Low";
+  yearTag?: string;
+}
+
+export interface YouTubeReference {
+  id: string;
+  title: string;
+  url: string;
+  channelName?: string;
+  duration?: string;
+}
+
 export interface Unit {
   id: string;
   number: string;
@@ -7,6 +23,8 @@ export interface Unit {
   status: "Mastered" | "In Progress" | "Locked";
   topics?: string[];
   materials?: StudyMaterial[];
+  importantQuestions?: ImportantQuestion[];
+  youtubeLinks?: YouTubeReference[];
 }
 
 export interface StudyMaterial {
@@ -14,7 +32,7 @@ export interface StudyMaterial {
   name: string;
   size: string;
   addedTime: string;
-  type: "pdf" | "code" | "question";
+  type: "pdf" | "ppt" | "image" | "doc" | "code" | "question" | "youtube" | "other";
   isBookmarked: boolean;
   tag?: string;
   details?: string;

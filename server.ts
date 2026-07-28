@@ -169,16 +169,37 @@ app.get("/api/files/:fileId", (req, res) => {
     }
 
     const ext = path.extname(safeFileId).toLowerCase();
+    const isDownload = req.query.download === "true";
+
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Accept-Ranges", "bytes");
 
+    if (isDownload) {
+      res.setHeader("Content-Disposition", `attachment; filename="${safeFileId}"`);
+    }
+
     if (ext === ".pdf") {
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", "inline");
-    } else if (ext === ".png" || ext === ".jpg" || ext === ".jpeg") {
-      res.setHeader("Content-Type", `image/${ext.replace(".", "")}`);
-    } else if (ext === ".txt" || ext === ".md") {
+      if (!isDownload) res.setHeader("Content-Disposition", "inline");
+    } else if (ext === ".png") {
+      res.setHeader("Content-Type", "image/png");
+    } else if (ext === ".jpg" || ext === ".jpeg") {
+      res.setHeader("Content-Type", "image/jpeg");
+    } else if (ext === ".webp") {
+      res.setHeader("Content-Type", "image/webp");
+    } else if (ext === ".gif") {
+      res.setHeader("Content-Type", "image/gif");
+    } else if (ext === ".svg") {
+      res.setHeader("Content-Type", "image/svg+xml");
+    } else if (ext === ".ppt" || ext === ".pptx") {
+      res.setHeader("Content-Type", "application/vnd.ms-powerpoint");
+    } else if (ext === ".doc" || ext === ".docx") {
+      res.setHeader("Content-Type", "application/msword");
+    } else if (ext === ".xls" || ext === ".xlsx") {
+      res.setHeader("Content-Type", "application/vnd.ms-excel");
+    } else if (ext === ".txt" || ext === ".md" || ext === ".js" || ext === ".ts" || ext === ".py" || ext === ".c" || ext === ".cpp" || ext === ".html" || ext === ".css" || ext === ".json") {
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      if (!isDownload) res.setHeader("Content-Disposition", "inline");
     } else {
       res.setHeader("Content-Type", "application/octet-stream");
     }

@@ -19,8 +19,10 @@ import { Logo } from "./components/Logo";
 import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft } from "lucide-react";
 
 export default function App() {
-  // Splash Screen State
-  const [isSplash, setIsSplash] = useState(true);
+  // Splash Screen State with Local Storage persistence
+  const [isSplash, setIsSplash] = useState(() => {
+    return localStorage.getItem("read_rabbit_is_splash") !== "false";
+  });
 
   // Core Courses State with Local Storage persistence
   const [courses, setCourses] = useState<Course[]>(() => {
@@ -48,7 +50,15 @@ export default function App() {
   });
 
   // Sidebar tab control: semesters, library, settings, admin
-  const [activeTab, setActiveTab] = useState("semesters");
+  const [activeTab, setActiveTab] = useState(() => {
+    const savedTab = localStorage.getItem("read_rabbit_active_tab");
+    if (savedTab) return savedTab;
+    const savedSubject = localStorage.getItem("read_rabbit_selected_subject_id");
+    if (savedSubject) return "units";
+    const savedSem = localStorage.getItem("read_rabbit_selected_semester_id");
+    if (savedSem) return "subjects";
+    return "semesters";
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Authentication State
@@ -209,6 +219,14 @@ export default function App() {
       localStorage.removeItem("read_rabbit_selected_subject_id");
     }
   }, [selectedSubjectId]);
+
+  useEffect(() => {
+    localStorage.setItem("read_rabbit_is_splash", isSplash ? "true" : "false");
+  }, [isSplash]);
+
+  useEffect(() => {
+    localStorage.setItem("read_rabbit_active_tab", activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     localStorage.setItem("read_rabbit_is_admin", isAdmin ? "true" : "false");
