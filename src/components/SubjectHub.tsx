@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Subject, Unit, StudyMaterial } from "../types";
+import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
 import { 
   ChevronRight, 
   BookOpen, 
@@ -86,6 +86,23 @@ export default function SubjectHub({
   const [qImportance, setQImportance] = useState<"High" | "Medium" | "Low">("High");
   const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
 
+  // In-App YouTube Video Player state
+  const [activeYtVideo, setActiveYtVideo] = useState<{ id: string; title: string; url: string; ytId: string | null; channelName?: string; unitNumber?: string } | null>(null);
+  const [ytPlayerNotes, setYtPlayerNotes] = useState("");
+  const [ytNotesSaved, setYtNotesSaved] = useState(false);
+
+  const openYtVideo = (yt: YouTubeReference, unitNumber?: string) => {
+    const ytId = getYouTubeVideoId(yt.url);
+    window.history.pushState({ subModal: "youtube", ytId: yt.id }, "");
+    setActiveYtVideo({ ...yt, ytId, unitNumber });
+    setYtPlayerNotes("");
+    setYtNotesSaved(false);
+  };
+
+  const closeYtVideo = () => {
+    setActiveYtVideo(null);
+  };
+
   // History sync helper for SubjectHub modals
   const openMaterial = (mat: StudyMaterial) => {
     window.history.pushState({ subModal: "material", matId: mat.id }, "");
@@ -108,7 +125,9 @@ export default function SubjectHub({
   // Close active modal on browser Back button
   useEffect(() => {
     const handleHubPopState = () => {
-      if (activeMaterial) {
+      if (activeYtVideo) {
+        setActiveYtVideo(null);
+      } else if (activeMaterial) {
         setActiveMaterial(null);
       } else if (selectedUnit) {
         setSelectedUnit(null);
@@ -119,7 +138,7 @@ export default function SubjectHub({
 
     window.addEventListener("popstate", handleHubPopState);
     return () => window.removeEventListener("popstate", handleHubPopState);
-  }, [activeMaterial, selectedUnit, isPlayingQuiz]);
+  }, [activeYtVideo, activeMaterial, selectedUnit, isPlayingQuiz]);
 
   // Download File Helper
   const handleDownloadFile = async (material: StudyMaterial) => {
@@ -1055,25 +1074,34 @@ export default function SubjectHub({
 
                               return (
                                 <div key={yt.id} className="bg-white rounded-2xl border border-[#dac1c1]/30 overflow-hidden shadow-xs flex flex-col justify-between hover:shadow-md transition-all group">
-                                  <div className="relative aspect-video bg-black overflow-hidden">
+                                  {/* Clickable Video Thumbnail -> Plays In-App */}
+                                  <div 
+                                    onClick={() => openYtVideo(yt, unit.number)}
+                                    className="relative aspect-video bg-black overflow-hidden cursor-pointer group/thumb"
+                                    title="Click to play video inside Read Rabbit"
+                                  >
                                     <img 
                                       src={thumbUrl} 
                                       alt={yt.title}
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
+                                      className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300 opacity-90"
                                     />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center">
-                                      <div className="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                        <Play size={18} className="fill-white ml-0.5" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent flex items-center justify-center">
+                                      <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-transform">
+                                        <Play size={22} className="fill-white ml-0.5" />
                                       </div>
                                     </div>
-                                    <span className="absolute bottom-2 right-2 bg-black/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                                      YouTube
+                                    <span className="absolute bottom-2 right-2 bg-black/80 text-white text-[9px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
+                                      <Youtube size={11} className="text-red-500" />
+                                      In-App Player
                                     </span>
                                   </div>
 
                                   <div className="p-3 space-y-2 flex-1 flex flex-col justify-between">
                                     <div>
-                                      <h5 className="font-bold text-xs text-[#40010d] line-clamp-2 leading-snug group-hover:text-[#95491a]">
+                                      <h5 
+                                        onClick={() => openYtVideo(yt, unit.number)}
+                                        className="font-bold text-xs text-[#40010d] line-clamp-2 leading-snug hover:text-red-600 cursor-pointer transition-colors"
+                                      >
                                         {yt.title}
                                       </h5>
                                       <span className="text-[10px] text-gray-500 block mt-1">
@@ -1081,15 +1109,27 @@ export default function SubjectHub({
                                       </span>
                                     </div>
 
-                                    <div className="flex items-center justify-between pt-2 border-t border-gray-100 gap-2">
+                                    {/* Actions: Play In-App (Primary) | YouTube ↗ | Delete */}
+                                    <div className="flex items-center justify-between pt-2 border-t border-gray-100 gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => openYtVideo(yt, unit.number)}
+                                        className="flex-1 px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center justify-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                                        title="Watch directly inside Read Rabbit"
+                                      >
+                                        <Play size={12} className="fill-white" />
+                                        <span>Play In-App</span>
+                                      </button>
+
                                       <a
                                         href={yt.url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                                        className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#544243] text-[10px] font-bold rounded-xl transition-all flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                                        title="Open external YouTube tab"
                                       >
-                                        <Youtube size={13} />
-                                        <span>Watch on YouTube ↗</span>
+                                        <ExternalLink size={11} />
+                                        <span>YouTube ↗</span>
                                       </a>
 
                                       <button
@@ -1557,6 +1597,177 @@ export default function SubjectHub({
                     Close Viewer
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* IN-APP EMBEDDED YOUTUBE PLAYER MODAL WITH LIVE NOTEPAD */}
+      <AnimatePresence>
+        {activeYtVideo && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-[#fffcf9] w-full max-w-5xl h-[92vh] rounded-3xl shadow-2xl border border-[#dac1c1]/40 flex flex-col p-4 sm:p-6 overflow-hidden relative"
+            >
+              {/* Modal Top Navigation & Title Bar */}
+              <div className="flex flex-wrap justify-between items-center gap-3 border-b border-[#dac1c1]/20 pb-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-red-600 text-white flex items-center justify-center shadow-md shrink-0">
+                    <Youtube size={22} className="fill-white" />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-extrabold rounded-md uppercase tracking-wider">
+                        In-App Lecture Cinema 🍿
+                      </span>
+                      {activeYtVideo.unitNumber && (
+                        <span className="px-2 py-0.5 bg-[#40010d] text-white text-[10px] font-bold rounded-md">
+                          Unit {activeYtVideo.unitNumber}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-extrabold text-sm sm:text-base text-[#40010d] truncate max-w-lg mt-0.5">
+                      {activeYtVideo.title}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={activeYtVideo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="Open in native YouTube app or tab"
+                  >
+                    <ExternalLink size={13} />
+                    <span className="hidden sm:inline">Open YouTube ↗</span>
+                  </a>
+
+                  <button
+                    onClick={closeYtVideo}
+                    className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-[#40010d] cursor-pointer"
+                    title="Close Video Player"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Main Content: Split Player & Live Note Taking Notepad */}
+              <div className="my-4 flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0 overflow-y-auto lg:overflow-hidden">
+                {/* Embedded Video Canvas (2 Columns on Desktop) */}
+                <div className="lg:col-span-2 flex flex-col h-full bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-lg">
+                  <div className="relative w-full aspect-video bg-black flex-1 flex items-center justify-center">
+                    {activeYtVideo.ytId ? (
+                      <iframe
+                        src={`https://www.youtube.com/embed/${activeYtVideo.ytId}?autoplay=1&rel=0&modestbranding=1`}
+                        title={activeYtVideo.title}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        className="w-full h-full border-0"
+                      />
+                    ) : (
+                      <div className="p-8 text-center space-y-3 text-white">
+                        <Youtube size={48} className="text-red-500 mx-auto animate-pulse" />
+                        <h4 className="font-bold text-base">Direct YouTube Video Link</h4>
+                        <p className="text-xs text-gray-300 max-w-sm mx-auto">
+                          This video link can be played directly on YouTube. Click below to launch in a new tab:
+                        </p>
+                        <a
+                          href={activeYtVideo.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+                        >
+                          <ExternalLink size={14} />
+                          <span>Watch on YouTube.com ↗</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3 bg-slate-900 border-t border-slate-800 flex justify-between items-center text-[11px] text-slate-300">
+                    <span className="font-medium truncate max-w-md">
+                      📺 Playing: <strong>{activeYtVideo.title}</strong>
+                    </span>
+                    <span className="text-slate-400 text-[10px] shrink-0">
+                      Channel: {activeYtVideo.channelName || "Curated Lecture"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Side Panel: Concurrent Live Study Notepad */}
+                <div className="flex flex-col h-full bg-[#fff8f3] rounded-2xl p-4 border border-[#dac1c1]/30 text-left space-y-3">
+                  <div className="flex justify-between items-center border-b border-[#dac1c1]/30 pb-2">
+                    <span className="text-xs font-extrabold text-[#40010d] uppercase flex items-center gap-1.5">
+                      <FileText size={14} className="text-[#95491a]" />
+                      Live Lecture Notepad 📝
+                    </span>
+                    <span className="text-[10px] text-[#95491a] font-bold">
+                      Concurrent Notes
+                    </span>
+                  </div>
+
+                  <p className="text-[10px] text-[#544243] leading-relaxed">
+                    Jot down timestamps, core formulas, and key lecture points while watching without switching windows!
+                  </p>
+
+                  <textarea
+                    rows={8}
+                    placeholder={`e.g.\n02:15 - Definition of core concept\n08:40 - Key formula for exam\n14:10 - Solved problem step 1`}
+                    value={ytPlayerNotes}
+                    onChange={(e) => {
+                      setYtPlayerNotes(e.target.value);
+                      setYtNotesSaved(false);
+                    }}
+                    className="flex-1 w-full bg-white border border-[#dac1c1]/40 focus:border-[#fd9b65] rounded-xl p-3 text-xs text-[#231a0a] focus:outline-none font-sans leading-relaxed resize-none shadow-inner"
+                  />
+
+                  <div className="pt-2 flex justify-between items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!ytPlayerNotes.trim()) return;
+                        navigator.clipboard.writeText(`Lecture Notes (${activeYtVideo.title}):\n\n${ytPlayerNotes}`);
+                        setYtNotesSaved(true);
+                        setTimeout(() => setYtNotesSaved(false), 2500);
+                      }}
+                      className="flex-1 px-3 py-2 bg-[#40010d] hover:bg-[#7a2c35] text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                    >
+                      {ytNotesSaved ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      <span>{ytNotesSaved ? "Notes Copied!" : "Copy Notes"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setYtPlayerNotes("")}
+                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-[#544243] text-xs font-bold rounded-xl transition-all cursor-pointer"
+                      title="Clear Notepad"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Bottom Footer */}
+              <div className="border-t border-[#dac1c1]/20 pt-3 flex justify-between items-center text-[10px] text-[#877272]">
+                <span className="flex items-center gap-1 font-medium">
+                  <ShieldCheck size={14} className="text-emerald-600" />
+                  Read Rabbit In-App Video Engine • Seamless Distraction-Free Study Environment
+                </span>
+
+                <button
+                  onClick={closeYtVideo}
+                  className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#544243] rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Close Cinema
+                </button>
               </div>
             </motion.div>
           </div>

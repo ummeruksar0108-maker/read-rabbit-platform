@@ -4,6 +4,42 @@
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-maroon: #3E000C;
+  --color-burgundy: #5A0D18;
+  --color-gold: #C89B3C;
+  --color-[#3E000C]: #3E000C;
+  --color-[#5A0D18]: #5A0D18;
+  --color-[#C89B3C]: #C89B3C;
+  --color-[#FFECD1]: #FFECD1;
+  --color-[#FFF8F0]: #FFF8F0;
+  --color-[#F7E5CA]: #F7E5CA;
+  --color-[#2B2B2B]: #2B2B2B;
+  --color-[#6A5A52]: #6A5A52;
+  --color-[#E7D6BC]: #E7D6BC;
+  --color-[#2E7D32]: #2E7D32;
+}
+
+body {
+  background-color: #FFECD1;
+  color: #2B2B2B;
+  font-family: var(--font-sans);
+}
+
+/* Custom Scrollbar for Warm Academic Theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F7E5CA;
+}
+::-webkit-scrollbar-thumb {
+  background: #E7D6BC;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C89B3C;
 }
 
 /* Material Icons Outlined Integration */
@@ -21,11 +57,11 @@
 }
 
 .cozy-shadow {
-  box-shadow: 0 20px 25px -5px rgba(62, 0, 12, 0.04), 0 10px 10px -5px rgba(62, 0, 12, 0.02);
+  box-shadow: 0 20px 25px -5px rgba(62, 0, 12, 0.06), 0 10px 10px -5px rgba(62, 0, 12, 0.03);
 }
 
 .soft-shadow {
-  box-shadow: 0 4px 20px -4px rgba(62, 0, 12, 0.04);
+  box-shadow: 0 4px 20px -4px rgba(62, 0, 12, 0.05);
 }
 
 .soft-shadow-hover {
@@ -33,16 +69,16 @@
 }
 
 .soft-shadow-hover:hover {
-  box-shadow: 0 8px 30px -4px rgba(62, 0, 12, 0.08);
+  box-shadow: 0 8px 30px -4px rgba(62, 0, 12, 0.1);
   transform: translateY(-4px);
 }
 
 .carrot-progress {
-  background: linear-gradient(90deg, #fd9b65 0%, #95491a 100%);
+  background: linear-gradient(90deg, #C89B3C 0%, #3E000C 100%);
 }
 
 .glass-nav {
-  background: rgba(255, 248, 243, 0.85);
+  background: rgba(255, 248, 240, 0.9);
   backdrop-filter: blur(12px);
 }
 
