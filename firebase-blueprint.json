@@ -1,0 +1,31 @@
+{
+  "entities": {
+    "courses": {
+      "title": "Courses Data",
+      "description": "Stores the complete course curriculum structure and study materials for Read Rabbit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "coursesData": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["coursesData"]
+    },
+    "uploaded_files": {
+      "title": "Uploaded Files",
+      "description": "Stores metadata and shared cloud URLs of uploaded study materials across devices",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "size": { "type": "string" },
+        "type": { "type": "string" },
+        "url": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "unitId": { "type": "string" },
+        "uploadedAt": { "type": "string" }
+      },
+      "required": ["name", "url"]
+    }
+  }
+}

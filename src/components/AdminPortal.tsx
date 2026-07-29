@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Course, Subject, Semester, Unit, StudyMaterial } from "../types";
 import { saveFileToIndexedDB } from "../lib/fileStorage";
+import { uploadFileToCloud } from "../lib/firebase";
 import { 
   ShieldCheck, 
   Lock, 
@@ -527,7 +528,7 @@ export default function AdminPortal({
     }
   };
 
-  // Process drag/drop or selected file in AdminPortal with FormData streaming upload
+  // Process drag/drop or selected file in AdminPortal with Cloud Storage upload
   const handleProcessPortalFile = async (file: File, unitId: string) => {
     if (!file) {
       console.error("[ADMIN UPLOAD STEP 1 ERROR] No file provided");
@@ -551,86 +552,25 @@ export default function AdminPortal({
     }
 
     let fileUrl = "";
-    let fileId = "";
+    let fileId = "mat_unit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
 
     try {
-      console.log(`[ADMIN UPLOAD STEP 2: FormData Construct] Packaging binary stream...`);
-      const formData = new FormData();
-      formData.append("file", file);
-
-      console.log(`[ADMIN UPLOAD STEP 3: API Request] POSTing /api/upload...`);
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData
-      });
-
-      if (res.ok) {
-        const uploadData = await res.json();
-        if (uploadData.fileUrl) {
-          fileUrl = uploadData.fileUrl;
-          fileId = uploadData.fileId;
-        }
-      }
-    } catch (err) {
-      console.warn("[ADMIN UPLOAD WARN] Server endpoint error, trying base64 payload fallback:", err);
+      console.log(`[ADMIN UPLOAD TO CLOUD] Calling uploadFileToCloud...`);
+      const cloudResult = await uploadFileToCloud(file, "study_materials");
+      fileUrl = cloudResult.url;
+      if (cloudResult.size) sizeStr = cloudResult.size;
+      console.log("[ADMIN UPLOAD CLOUD SUCCESS] Permanent public URL:", fileUrl);
+    } catch (uploadErr: any) {
+      console.error("[ADMIN CLOUD UPLOAD ERROR] Failed uploading to Cloud Storage:", uploadErr);
+      alert(`Upload error: ${uploadErr.message || "Failed to upload file to cloud."}`);
+      return;
     }
 
-    if (!fileUrl) {
-      try {
-        const base64Data = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve((e.target?.result as string) || "");
-          reader.onerror = () => resolve("");
-          reader.readAsDataURL(file);
-        });
-
-        if (base64Data) {
-          const res = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileName: name,
-              fileType: file.type,
-              fileData: base64Data
-            })
-          });
-
-          if (res.ok) {
-            const uploadData = await res.json();
-            if (uploadData.fileUrl) {
-              fileUrl = uploadData.fileUrl;
-              fileId = uploadData.fileId;
-            }
-          }
-        }
-      } catch (jsonErr) {
-        console.warn("[ADMIN UPLOAD WARN] Base64 server endpoint error:", jsonErr);
-      }
-    }
-
-    if (!fileUrl) {
-      fileUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve((e.target?.result as string) || "");
-        reader.onerror = () => resolve("");
-        if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
-          reader.readAsText(file);
-        } else {
-          reader.readAsDataURL(file);
-        }
-      });
-    }
-
-    if (!fileId) {
-      fileId = "mat_unit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-    }
-
-    // Save binary file stream into browser IndexedDB for robust multi-session local access
-    await saveFileToIndexedDB(fileId, file);
-
-    // If fileUrl is missing completely, fallback to indexeddb handle
-    if (!fileUrl) {
-      fileUrl = `indexeddb://${fileId}`;
+    // Save binary file stream into browser IndexedDB for local offline backup
+    try {
+      await saveFileToIndexedDB(fileId, file);
+    } catch (e) {
+      console.warn("IndexedDB local backup skipped:", e);
     }
 
     try {

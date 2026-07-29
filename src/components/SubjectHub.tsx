@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
 import { saveFileToIndexedDB, getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
+import { uploadFileToCloud } from "../lib/firebase";
 import { 
   ChevronRight, 
   BookOpen, 
@@ -534,96 +535,29 @@ export default function SubjectHub({
       type = "code";
     }
 
-    setUploadSuccess(`[Uploading] Processing "${name}" (${sizeStr})...`);
+    setUploadSuccess(`⏳ Uploading "${name}" (${sizeStr}) to Firebase Cloud Storage...`);
 
     let fileUrl = "";
-    let fileId = "";
+    let fileId = "mat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
 
     try {
-      console.log(`[PDF UPLOAD STEP 2: Server API Request] POSTing /api/upload...`);
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (res.ok) {
-        const uploadData = await res.json();
-        if (uploadData.fileUrl) {
-          fileUrl = uploadData.fileUrl;
-          fileId = uploadData.fileId;
-          console.log("[PDF UPLOAD SUCCESS] Server saved file at:", fileUrl);
-        }
-      } else {
-        console.warn(`[PDF UPLOAD WARN] Server endpoint returned HTTP ${res.status}. Trying JSON payload server upload...`);
-      }
-    } catch (apiErr) {
-      console.warn("[PDF UPLOAD WARN] Server multipart endpoint error. Trying JSON payload fallback...", apiErr);
+      console.log(`[PDF UPLOAD TO CLOUD] Calling uploadFileToCloud...`);
+      const cloudResult = await uploadFileToCloud(file, "study_materials");
+      fileUrl = cloudResult.url;
+      if (cloudResult.size) sizeStr = cloudResult.size;
+      console.log("[PDF UPLOAD CLOUD SUCCESS] Permanent public URL:", fileUrl);
+      setUploadSuccess(`✓ Successfully uploaded "${name}" to Cloud Storage! Syncing across all devices...`);
+    } catch (uploadErr: any) {
+      console.error("[CLOUD UPLOAD ERROR] Failed uploading to Cloud Storage:", uploadErr);
+      setUploadError(`Upload failed: ${uploadErr.message || "Could not upload file to cloud."}`);
+      return;
     }
 
-    // Step 3: Base64 JSON POST fallback to server endpoint to guarantee persistence on web
-    if (!fileUrl) {
-      try {
-        console.log("[PDF UPLOAD STEP 3: Base64 JSON Upload to Server] Converting file to data URL...");
-        const base64Data = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve((e.target?.result as string) || "");
-          reader.onerror = () => resolve("");
-          reader.readAsDataURL(file);
-        });
-
-        if (base64Data) {
-          const res = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileName: name,
-              fileType: file.type,
-              fileData: base64Data
-            })
-          });
-
-          if (res.ok) {
-            const uploadData = await res.json();
-            if (uploadData.fileUrl) {
-              fileUrl = uploadData.fileUrl;
-              fileId = uploadData.fileId;
-              console.log("[PDF UPLOAD BASE64 SUCCESS] Server saved file at:", fileUrl);
-            }
-          }
-        }
-      } catch (jsonErr) {
-        console.warn("[PDF UPLOAD WARN] Base64 server endpoint error:", jsonErr);
-      }
-    }
-
-    // Client-side base64 fallback only if server is totally offline
-    if (!fileUrl) {
-      console.log("[PDF UPLOAD STEP 4: Local Fallback] Encoding local DataURL...");
-      fileUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve((e.target?.result as string) || "");
-        reader.onerror = () => resolve("");
-        if (["txt", "md", "js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json"].includes(ext)) {
-          reader.readAsText(file);
-        } else {
-          reader.readAsDataURL(file);
-        }
-      });
-    }
-
-    if (!fileId) {
-      fileId = "mat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-    }
-
-    // Save binary file to IndexedDB for reliable local browser persistence
-    await saveFileToIndexedDB(fileId, file);
-
-    // If fileUrl is missing completely, fallback to indexeddb handle
-    if (!fileUrl) {
-      fileUrl = `indexeddb://${fileId}`;
+    // Backup save to IndexedDB for offline capability on local browser
+    try {
+      await saveFileToIndexedDB(fileId, file);
+    } catch (e) {
+      console.warn("IndexedDB local backup skipped:", e);
     }
 
     const newMaterial: StudyMaterial = {

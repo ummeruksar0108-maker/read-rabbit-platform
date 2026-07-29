@@ -14,6 +14,7 @@ import ExtraTabs from "./components/ExtraTabs";
 import AdminPortal from "./components/AdminPortal";
 import AddSubjectModal from "./components/AddSubjectModal";
 import { Logo } from "./components/Logo";
+import { saveCoursesToFirestore, loadCoursesFromFirestore, subscribeCoursesFromFirestore } from "./lib/firebase";
 
 // Icons for Responsive Top Bar
 import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft, LogOut } from "lucide-react";
@@ -164,18 +165,23 @@ export default function App() {
   const isFetchingFromServer = useRef(false);
   const lastLocalMutationTime = useRef<number>(0);
 
-  // Helper function to save curriculum directly to server
+  // Helper function to save curriculum directly to shared cloud (Firestore & server)
   const saveCurriculumToServer = async (coursesToSave: Course[]) => {
     lastLocalMutationTime.current = Date.now();
+    try {
+      await saveCoursesToFirestore(coursesToSave);
+      setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    } catch (err) {
+      console.warn("[CLIENT WARN] Failed to save curriculum to Firestore:", err);
+    }
     try {
       await fetch("/api/curriculum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courses: coursesToSave })
       });
-      setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     } catch (err) {
-      console.warn("[CLIENT WARN] Failed to save curriculum to server:", err);
+      console.warn("[CLIENT WARN] Failed to save curriculum to server API:", err);
     }
     try {
       localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(coursesToSave));
@@ -184,36 +190,47 @@ export default function App() {
     }
   };
 
-  // Helper function to fetch latest curriculum from server
+  // Helper function to fetch latest curriculum from shared cloud
   const fetchCurriculumFromServer = async (isManualCall = false) => {
     if (isManualCall) setIsSyncingServer(true);
     isFetchingFromServer.current = true;
     try {
-      const res = await fetch("/api/curriculum");
-      if (res.ok) {
-        const data = await res.json();
-        if (data && Array.isArray(data) && data.length > 0) {
-          const serverJson = JSON.stringify(data);
-          // If manual call OR no recent local mutation in the last 6 seconds, sync server data
-          if (isManualCall || Date.now() - lastLocalMutationTime.current > 6000) {
-            setCourses((prevCourses) => {
-              if (JSON.stringify(prevCourses) !== serverJson) {
-                console.log("[LIVE CLOUD SYNC] Updated curriculum from server! New uploads synchronized.");
-                return data;
-              }
-              return prevCourses;
-            });
-          }
-          setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-          try {
-            localStorage.setItem("read_rabbit_curriculum_v2", serverJson);
-          } catch (e) {
-            // LocalStorage quota fallback
+      const cloudData = await loadCoursesFromFirestore();
+      if (cloudData && Array.isArray(cloudData) && cloudData.length > 0) {
+        const cloudJson = JSON.stringify(cloudData);
+        if (isManualCall || Date.now() - lastLocalMutationTime.current > 3000) {
+          setCourses((prevCourses) => {
+            if (JSON.stringify(prevCourses) !== cloudJson) {
+              console.log("[FIRESTORE CLOUD SYNC] Updated curriculum from Firestore Cloud!");
+              return cloudData;
+            }
+            return prevCourses;
+          });
+        }
+        setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+        try {
+          localStorage.setItem("read_rabbit_curriculum_v2", cloudJson);
+        } catch (e) {}
+      } else {
+        const res = await fetch("/api/curriculum");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data) && data.length > 0) {
+            const serverJson = JSON.stringify(data);
+            if (isManualCall || Date.now() - lastLocalMutationTime.current > 3000) {
+              setCourses((prevCourses) => {
+                if (JSON.stringify(prevCourses) !== serverJson) {
+                  return data;
+                }
+                return prevCourses;
+              });
+            }
+            setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
           }
         }
       }
     } catch (err) {
-      console.warn("[CLOUD SYNC WARN] Server fetch error:", err);
+      console.warn("[CLOUD SYNC WARN] Server/Firestore fetch error:", err);
     } finally {
       isInitialServerFetchDone.current = true;
       setTimeout(() => {
@@ -223,11 +240,27 @@ export default function App() {
     }
   };
 
-  // Fetch curriculum permanently from server on initial load + Polling every 6s + Window Focus listener
+  // Fetch curriculum permanently from shared cloud + Real-time Firestore subscriber + Window Focus listener
   useEffect(() => {
     fetchCurriculumFromServer();
 
-    // Background interval sync every 6s so other devices see new uploads live
+    // Subscribe to Firestore real-time updates across all devices (phones, laptops, tabs)
+    const unsubscribe = subscribeCoursesFromFirestore((cloudCourses) => {
+      if (cloudCourses && Array.isArray(cloudCourses) && cloudCourses.length > 0) {
+        const cloudJson = JSON.stringify(cloudCourses);
+        if (Date.now() - lastLocalMutationTime.current > 3000) {
+          setCourses((prev) => {
+            if (JSON.stringify(prev) !== cloudJson) {
+              console.log("[FIRESTORE REALTIME SYNC] Live update received from Cloud!");
+              return cloudCourses;
+            }
+            return prev;
+          });
+        }
+      }
+    });
+
+    // Background fallback polling every 6s so every device stays synchronized
     const syncInterval = setInterval(() => {
       fetchCurriculumFromServer();
     }, 6000);
@@ -239,6 +272,7 @@ export default function App() {
     window.addEventListener("focus", handleWindowFocus);
 
     return () => {
+      unsubscribe();
       clearInterval(syncInterval);
       window.removeEventListener("focus", handleWindowFocus);
     };

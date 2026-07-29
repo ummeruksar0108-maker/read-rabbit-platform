@@ -132,8 +132,8 @@ app.post("/api/curriculum", async (req, res) => {
   }
 });
 
-// POST /api/upload - Permanent File Upload Endpoint (Handles both FormData & JSON)
-app.post("/api/upload", upload.single("file"), async (req, res) => {
+// POST /api/upload & /api/upload-file - Permanent File Upload Endpoint (Handles both FormData & JSON)
+const handleFileUploadRequest = async (req: express.Request, res: express.Response) => {
   try {
     console.log("[SERVER UPLOAD] Incoming upload request...");
 
@@ -146,6 +146,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
         success: true,
         fileId,
         fileUrl,
+        url: fileUrl,
         fileName: req.file.originalname,
         sizeBytes: req.file.size
       });
@@ -174,6 +175,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
         success: true,
         fileId,
         fileUrl,
+        url: fileUrl,
         fileName,
         sizeBytes: buffer.length
       });
@@ -185,7 +187,10 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     console.error("[SERVER UPLOAD ERROR] Exception during file save:", error);
     return res.status(500).json({ error: "Server failed to save uploaded file", details: error.message });
   }
-});
+};
+
+app.post("/api/upload", upload.single("file"), handleFileUploadRequest);
+app.post("/api/upload-file", upload.single("file"), handleFileUploadRequest);
 
 // GET /api/files/:fileId - Serve uploaded PDF / file permanently
 app.get("/api/uploads", async (req, res) => {
