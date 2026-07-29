@@ -16,13 +16,11 @@ import AddSubjectModal from "./components/AddSubjectModal";
 import { Logo } from "./components/Logo";
 
 // Icons for Responsive Top Bar
-import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft } from "lucide-react";
+import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft, LogOut } from "lucide-react";
 
 export default function App() {
-  // Splash Screen State with Local Storage persistence
-  const [isSplash, setIsSplash] = useState(() => {
-    return localStorage.getItem("read_rabbit_is_splash") !== "false";
-  });
+  // Splash Screen State - always show initial loading display on web page open
+  const [isSplash, setIsSplash] = useState(true);
 
   // Core Courses State with Local Storage persistence
   const [courses, setCourses] = useState<Course[]>(() => {
@@ -817,7 +815,7 @@ export default function App() {
                 animate={{ x: 0 }}
                 exit={{ x: "-100%" }}
                 transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="w-64 max-w-xs h-full bg-[#fffcf9] p-6 shadow-2xl flex flex-col justify-between"
+                className="w-72 max-w-[85vw] h-full max-h-screen overflow-y-auto bg-[#fffcf9] p-6 shadow-2xl flex flex-col justify-between space-y-6 z-50"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div>
@@ -826,7 +824,7 @@ export default function App() {
                       <Logo size="sm" />
                       <h2 className="font-sans text-lg font-bold text-[#40010d]">READ RABBIT</h2>
                     </div>
-                    <button onClick={() => setMobileMenuOpen(false)}>
+                    <button onClick={() => setMobileMenuOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg">
                       <X size={20} className="text-[#877272]" />
                     </button>
                   </div>
@@ -851,7 +849,7 @@ export default function App() {
                               setSelectedSubjectId(null);
                             }
                           }}
-                          className={`w-full flex items-center justify-between gap-3 rounded-xl px-4 py-3 transition-colors ${
+                          className={`w-full flex items-center justify-between gap-3 rounded-xl px-4 py-3 transition-colors cursor-pointer ${
                             isActive
                               ? "bg-[#fd9b65] text-[#341100] font-bold"
                               : "text-[#544243] hover:bg-[#f8e6cb]"
@@ -875,7 +873,7 @@ export default function App() {
                         handleChangeCourseClick();
                         setMobileMenuOpen(false);
                       }}
-                      className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[#95491a] hover:bg-[#f8e6cb] mt-4 font-bold border border-dashed border-[#fd9b65]/20 text-left"
+                      className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[#95491a] hover:bg-[#f8e6cb] mt-4 font-bold border border-dashed border-[#fd9b65]/20 text-left cursor-pointer"
                     >
                       <RefreshCw size={18} />
                       <span className="text-sm font-sans">Switch Course</span>
@@ -883,15 +881,24 @@ export default function App() {
                   </nav>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 pt-4 border-t border-[#dac1c1]/30">
                   <button
                     onClick={() => {
                       setActiveTab("help");
                       setMobileMenuOpen(false);
                     }}
-                    className="w-full py-3 text-left text-xs font-sans text-[#544243] flex items-center gap-3 px-4 hover:bg-[#f8e6cb]"
+                    className="w-full py-2.5 text-left text-xs font-sans text-[#544243] flex items-center gap-3 px-4 hover:bg-[#f8e6cb] rounded-xl font-semibold cursor-pointer"
                   >
-                    <HelpCircle size={18} /> Help
+                    <HelpCircle size={18} className="text-[#877272]" /> Help & Support
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab("logout");
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full py-2.5 text-left text-xs font-sans text-red-700 flex items-center gap-3 px-4 hover:bg-red-50 rounded-xl font-bold cursor-pointer"
+                  >
+                    <LogOut size={18} className="text-red-500" /> Logout / Exit
                   </button>
                 </div>
               </motion.div>

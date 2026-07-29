@@ -188,6 +188,51 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 });
 
 // GET /api/files/:fileId - Serve uploaded PDF / file permanently
+app.get("/api/uploads", async (req, res) => {
+  try {
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      return res.json([]);
+    }
+    const files = await fsPromises.readdir(UPLOADS_DIR);
+    const fileStats = await Promise.all(
+      files.map(async (filename) => {
+        try {
+          const filePath = path.join(UPLOADS_DIR, filename);
+          const stat = await fsPromises.stat(filePath);
+          return {
+            filename,
+            url: `/api/files/${filename}`,
+            sizeBytes: stat.size,
+            createdAt: stat.birthtime || stat.mtime
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+    );
+    return res.json(fileStats.filter(Boolean));
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to list uploads" });
+  }
+});
+
+// DELETE /api/files/:fileId - Delete file from server disk
+app.delete("/api/files/:fileId", async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const safeFileId = path.basename(fileId);
+    const filePath = path.join(UPLOADS_DIR, safeFileId);
+    if (fs.existsSync(filePath)) {
+      await fsPromises.unlink(filePath);
+      console.log(`[SERVER FILE DELETE] Removed ${safeFileId}`);
+      return res.json({ success: true, message: "File deleted" });
+    }
+    return res.status(404).json({ error: "File not found" });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to delete file" });
+  }
+});
+
 app.get("/api/files/:fileId", (req, res) => {
   try {
     const { fileId } = req.params;

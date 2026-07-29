@@ -43,7 +43,7 @@ export default function Sidebar({
   ];
 
   return (
-    <aside className="hidden md:flex flex-col h-screen py-6 border-r border-[#dac1c1]/50 bg-[#fff2e1]/70 w-64 fixed left-0 top-0 text-[#231a0a] justify-between">
+    <aside className="hidden md:flex flex-col h-screen max-h-screen overflow-y-auto py-6 pb-8 border-r border-[#dac1c1]/50 bg-[#fff2e1]/70 w-64 fixed left-0 top-0 text-[#231a0a] justify-between z-40">
       <div>
         {/* Logo and Course Info */}
         <div className="px-6 mb-8 flex flex-col items-center text-center space-y-3">

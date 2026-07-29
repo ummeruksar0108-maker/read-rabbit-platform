@@ -14,6 +14,7 @@ import {
   FileText, 
   Terminal, 
   CheckCircle,
+  FileCheck,
   Clock,
   ArrowLeft,
   X,
@@ -265,8 +266,41 @@ export default function SubjectHub({
     return () => window.removeEventListener("popstate", handleHubPopState);
   }, [activeYtVideo, activeMaterial, selectedUnit, isPlayingQuiz]);
 
-  // Download File Helper
-  const handleDownloadFile = async (material: StudyMaterial) => {
+  // Downloaded Files Tracking State
+  const [downloadedMaterialIds, setDownloadedMaterialIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem("read_rabbit_downloaded_materials_v1");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  const [downloadPromptMaterial, setDownloadPromptMaterial] = useState<StudyMaterial | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("read_rabbit_downloaded_materials_v1", JSON.stringify(downloadedMaterialIds));
+  }, [downloadedMaterialIds]);
+
+  const markMaterialAsDownloaded = (mId: string, mName: string) => {
+    setDownloadedMaterialIds((prev) => {
+      const list = new Set(prev);
+      list.add(mId);
+      list.add(mName);
+      return Array.from(list);
+    });
+  };
+
+  const isMaterialDownloaded = (material: StudyMaterial) => {
+    return downloadedMaterialIds.includes(material.id) || downloadedMaterialIds.includes(material.name);
+  };
+
+  // Perform actual file download
+  const executeDownload = async (material: StudyMaterial) => {
+    markMaterialAsDownloaded(material.id, material.name);
     try {
       let downloadUrl = activeBlobUrl || material.details || "";
 
@@ -309,6 +343,15 @@ export default function SubjectHub({
       } else {
         alert(`Could not trigger automated download for "${material.name}".`);
       }
+    }
+  };
+
+  // Download File Handler (triggers prompt if already downloaded)
+  const handleDownloadFile = async (material: StudyMaterial) => {
+    if (isMaterialDownloaded(material)) {
+      setDownloadPromptMaterial(material);
+    } else {
+      executeDownload(material);
     }
   };
 
@@ -997,9 +1040,9 @@ export default function SubjectHub({
                                         {m.size} • {m.type.toUpperCase()} file
                                       </p>
                                     </div>
-                                  </div>
+                                   </div>
 
-                                  {/* Side-by-Side View Document, Download & Save to Cloud Buttons */}
+                                   {/* Side-by-Side View Document, Download & Save to Cloud Buttons */}
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     <button 
                                       type="button"
@@ -1011,15 +1054,27 @@ export default function SubjectHub({
                                       <span>View Document</span>
                                     </button>
 
-                                    <button 
-                                      type="button"
-                                      onClick={() => handleDownloadFile(m)}
-                                      className="px-2.5 py-1.5 bg-[#f8e6cb] hover:bg-[#fd9b65] text-[#95491a] hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
-                                      title="Download file directly to device"
-                                    >
-                                      <Download size={12} />
-                                      <span>Download</span>
-                                    </button>
+                                    {isMaterialDownloaded(m) ? (
+                                      <button 
+                                        type="button"
+                                        onClick={() => setDownloadPromptMaterial(m)}
+                                        className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
+                                        title="Downloaded! Click to open from files or re-download"
+                                      >
+                                        <FileCheck size={12} className="text-emerald-700" />
+                                        <span>✓ Downloaded</span>
+                                      </button>
+                                    ) : (
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleDownloadFile(m)}
+                                        className="px-2.5 py-1.5 bg-[#f8e6cb] hover:bg-[#fd9b65] text-[#95491a] hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
+                                        title="Download file directly to device"
+                                      >
+                                        <Download size={12} />
+                                        <span>Download</span>
+                                      </button>
+                                    )}
 
                                     <button
                                       type="button"
@@ -1642,6 +1697,26 @@ export default function SubjectHub({
                           <Eye size={12} />
                           {isPdf ? "View PDF" : isCode ? "View Code" : "View Notes"}
                         </button>
+
+                        {isMaterialDownloaded(material) ? (
+                          <button 
+                            type="button"
+                            onClick={() => setDownloadPromptMaterial(material)}
+                            className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-xl text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                          >
+                            <FileCheck size={12} className="text-emerald-700" />
+                            <span>✓ Downloaded</span>
+                          </button>
+                        ) : (
+                          <button 
+                            type="button"
+                            onClick={() => handleDownloadFile(material)}
+                            className="px-3 py-1.5 bg-[#f8e6cb] hover:bg-[#fd9b65] text-[#95491a] hover:text-white rounded-xl text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                          >
+                            <Download size={12} />
+                            <span>Download</span>
+                          </button>
+                        )}
                         {isAdmin && (
                           <button
                             onClick={() => handleDeleteSubjectMaterial(material.id)}
@@ -2058,6 +2133,80 @@ export default function SubjectHub({
                   className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#544243] rounded-xl text-xs font-bold transition-colors cursor-pointer"
                 >
                   Close Cinema
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ALREADY DOWNLOADED FILE PROMPT MODAL */}
+      <AnimatePresence>
+        {downloadPromptMaterial && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white max-w-md w-full rounded-3xl p-6 border border-[#dac1c1]/40 shadow-2xl space-y-5 text-left"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center shrink-0 shadow-xs">
+                    <FileCheck size={26} />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded-full uppercase tracking-wider inline-block">
+                      Already Downloaded
+                    </span>
+                    <h3 className="font-extrabold text-sm sm:text-base text-[#40010d] mt-1 truncate" title={downloadPromptMaterial.name}>
+                      {downloadPromptMaterial.name}
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setDownloadPromptMaterial(null)}
+                  className="p-1.5 text-gray-400 hover:text-[#40010d] hover:bg-gray-100 rounded-xl transition-colors cursor-pointer shrink-0"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-4 bg-[#fff8f3] rounded-2xl border border-[#dac1c1]/30 text-xs text-[#544243] space-y-2 leading-relaxed">
+                <p className="font-bold text-[#40010d]">
+                  ✓ This file was downloaded previously and is saved in your device storage!
+                </p>
+                <p>
+                  Would you like to open and access this document directly inside the app, or download a fresh copy to your device?
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mat = downloadPromptMaterial;
+                    setDownloadPromptMaterial(null);
+                    openMaterial(mat);
+                  }}
+                  className="flex-1 py-3 px-4 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-2xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                >
+                  <Eye size={16} />
+                  <span>Open File Directly</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mat = downloadPromptMaterial;
+                    setDownloadPromptMaterial(null);
+                    executeDownload(mat);
+                  }}
+                  className="flex-1 py-3 px-4 bg-[#f8e6cb] hover:bg-[#fd9b65] text-[#95491a] hover:text-white rounded-2xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                >
+                  <Download size={16} />
+                  <span>Download Again</span>
                 </button>
               </div>
             </motion.div>

@@ -28,7 +28,11 @@ import {
   ArrowLeft,
   Download,
   RefreshCw,
-  Share2
+  Share2,
+  Search,
+  Filter,
+  Eye,
+  HardDrive
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -53,8 +57,171 @@ export default function AdminPortal({
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  // Admin Dashboard main tab state: 'curriculum' | 'sync' | 'semesters' | 'notifications' | 'security'
-  const [activeAdminTab, setActiveAdminTab] = useState<"curriculum" | "sync" | "semesters" | "notifications" | "security">("curriculum");
+  // Admin Dashboard main tab state: 'curriculum' | 'uploads' | 'sync' | 'semesters' | 'notifications' | 'security'
+  const [activeAdminTab, setActiveAdminTab] = useState<"curriculum" | "uploads" | "sync" | "semesters" | "notifications" | "security">("curriculum");
+
+  // Admin Uploads Directory States
+  const [uploadSearch, setUploadSearch] = useState("");
+  const [uploadTypeFilter, setUploadTypeFilter] = useState("all");
+  const [uploadCourseFilter, setUploadCourseFilter] = useState("all");
+  const [serverFiles, setServerFiles] = useState<Array<{ filename: string; url: string; sizeBytes: number; createdAt: string }>>([]);
+  const [isLoadingServerFiles, setIsLoadingServerFiles] = useState(false);
+  const [uploadDirectoryViewMode, setUploadDirectoryViewMode] = useState<"curriculum" | "server">("curriculum");
+
+  // Fetch server disk files when Uploads tab is opened
+  React.useEffect(() => {
+    if (activeAdminTab === "uploads") {
+      setIsLoadingServerFiles(true);
+      fetch("/api/uploads")
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data)) setServerFiles(data);
+        })
+        .catch((err) => console.log("Failed fetching server uploads:", err))
+        .finally(() => setIsLoadingServerFiles(false));
+    }
+  }, [activeAdminTab]);
+
+  // Aggregate all uploaded study materials across all courses, semesters, subjects, and units
+  const allUploadedMaterials = React.useMemo(() => {
+    const list: Array<{
+      material: StudyMaterial;
+      courseName: string;
+      courseId: string;
+      semesterName: string;
+      subjectName: string;
+      subjectId: string;
+      unitTitle?: string;
+      unitId?: string;
+    }> = [];
+
+    courses.forEach((course) => {
+      course.semesters.forEach((semester) => {
+        semester.subjects.forEach((subject) => {
+          // Subject-level materials
+          if (subject.materials && subject.materials.length > 0) {
+            subject.materials.forEach((mat) => {
+              list.push({
+                material: mat,
+                courseName: course.name,
+                courseId: course.id,
+                semesterName: semester.name,
+                subjectName: subject.name,
+                subjectId: subject.id,
+              });
+            });
+          }
+          // Unit-level materials
+          if (subject.units && subject.units.length > 0) {
+            subject.units.forEach((unit) => {
+              if (unit.materials && unit.materials.length > 0) {
+                unit.materials.forEach((mat) => {
+                  list.push({
+                    material: mat,
+                    courseName: course.name,
+                    courseId: course.id,
+                    semesterName: semester.name,
+                    subjectName: subject.name,
+                    subjectId: subject.id,
+                    unitTitle: `Unit ${unit.number}: ${unit.name}`,
+                    unitId: unit.id,
+                  });
+                });
+              }
+            });
+          }
+        });
+      });
+    });
+
+    return list;
+  }, [courses]);
+
+  // Filter materials based on search text and dropdown filters
+  const filteredUploadedMaterials = allUploadedMaterials.filter((item) => {
+    const matchesSearch =
+      !uploadSearch ||
+      item.material.name.toLowerCase().includes(uploadSearch.toLowerCase()) ||
+      item.subjectName.toLowerCase().includes(uploadSearch.toLowerCase()) ||
+      (item.unitTitle && item.unitTitle.toLowerCase().includes(uploadSearch.toLowerCase()));
+
+    const matchesType =
+      uploadTypeFilter === "all" ||
+      item.material.type.toLowerCase() === uploadTypeFilter.toLowerCase();
+
+    const matchesCourse =
+      uploadCourseFilter === "all" || item.courseId === uploadCourseFilter;
+
+    return matchesSearch && matchesType && matchesCourse;
+  });
+
+  // Delete a study material from curriculum & cloud
+  const handleDeleteMaterialFromAdmin = async (
+    materialId: string,
+    subjectId: string,
+    unitId?: string,
+    detailsUrl?: string
+  ) => {
+    if (!confirm("Are you sure you want to delete this upload from the curriculum? This cannot be undone.")) return;
+
+    const updatedCourses = courses.map((course) => ({
+      ...course,
+      semesters: course.semesters.map((semester) => ({
+        ...semester,
+        subjects: semester.subjects.map((subject) => {
+          if (subject.id !== subjectId) return subject;
+
+          if (unitId) {
+            return {
+              ...subject,
+              units: subject.units.map((unit) => {
+                if (unit.id !== unitId) return unit;
+                return {
+                  ...unit,
+                  materials: (unit.materials || []).filter((m) => m.id !== materialId),
+                };
+              }),
+            };
+          } else {
+            return {
+              ...subject,
+              materials: (subject.materials || []).filter((m) => m.id !== materialId),
+            };
+          }
+        }),
+      })),
+    }));
+
+    onUpdateCourses(updatedCourses);
+    await handleSaveCurriculumToCloud(updatedCourses);
+
+    if (detailsUrl && detailsUrl.startsWith("/api/files/")) {
+      const filename = detailsUrl.replace("/api/files/", "");
+      try {
+        await fetch(`/api/files/${filename}`, { method: "DELETE" });
+      } catch (e) {
+        console.warn("Server file delete note:", e);
+      }
+    }
+
+    alert("Study material deleted successfully! 🥕");
+  };
+
+  // Delete raw file from server disk
+  const handleDeleteServerFile = async (filename: string) => {
+    if (!confirm(`Permanently delete "${filename}" from server storage?`)) return;
+    try {
+      const res = await fetch(`/api/files/${filename}`, { method: "DELETE" });
+      if (res.ok) {
+        setServerFiles((prev) => prev.filter((f) => f.filename !== filename));
+        alert("File permanently removed from server disk storage.");
+      } else {
+        alert("Server returned error deleting file.");
+      }
+    } catch (e) {
+      alert("Failed to delete file from server: " + e);
+    }
+  };
 
   // Load admin password from localStorage (default: "admin")
   const [adminPassword, setAdminPassword] = useState(() => {
@@ -858,6 +1025,7 @@ export default function AdminPortal({
           <div className="flex border-b border-[#dac1c1]/30 gap-2 overflow-x-auto whitespace-nowrap pb-1">
             {[
               { id: "curriculum", label: "Curriculum Editor", icon: BookOpen },
+              { id: "uploads", label: "Uploaded Files Directory", icon: FolderPlus },
               { id: "sync", label: "Cross-Device Sync & Backup", icon: RefreshCw },
               { id: "semesters", label: "Manage Semesters", icon: Layers },
               { id: "notifications", label: "Dispatch Board", icon: Bell },
@@ -1328,6 +1496,318 @@ export default function AdminPortal({
                 )}
               </div>
 
+            </div>
+          )}
+
+          {/* UPLOADED FILES DIRECTORY (ADMIN EXCLUSIVE) */}
+          {activeAdminTab === "uploads" && (
+            <div className="max-w-6xl mx-auto space-y-6 font-sans">
+              {/* Header Banner */}
+              <div className="bg-white p-6 rounded-3xl border border-[#dac1c1]/20 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-amber-50 text-[#95491a] rounded-2xl flex items-center justify-center shrink-0">
+                      <FolderPlus size={24} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xl font-extrabold text-[#40010d]">Admin Central Uploads Directory</h3>
+                        <span className="px-2.5 py-0.5 bg-[#40010d] text-white text-[10px] font-bold rounded-full uppercase tracking-wider">
+                          Admin Only
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#544243] mt-1 leading-relaxed">
+                        A centralized directory listing all study material PDFs, notes, question papers, and files uploaded across all courses, subjects, and units.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Mode switch */}
+                  <div className="flex items-center bg-[#fff8f3] p-1.5 rounded-2xl border border-[#dac1c1]/40 shrink-0">
+                    <button
+                      onClick={() => setUploadDirectoryViewMode("curriculum")}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                        uploadDirectoryViewMode === "curriculum"
+                          ? "bg-[#40010d] text-white shadow-xs"
+                          : "text-[#544243] hover:text-[#40010d]"
+                      }`}
+                    >
+                      <BookOpen size={13} /> Curriculum Files ({filteredUploadedMaterials.length})
+                    </button>
+                    <button
+                      onClick={() => setUploadDirectoryViewMode("server")}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                        uploadDirectoryViewMode === "server"
+                          ? "bg-[#40010d] text-white shadow-xs"
+                          : "text-[#544243] hover:text-[#40010d]"
+                      }`}
+                    >
+                      <HardDrive size={13} /> Server Disk Storage ({serverFiles.length})
+                    </button>
+                  </div>
+                </div>
+
+                {/* KPI Stats summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-[#dac1c1]/20">
+                  <div className="bg-[#fff8f3] p-3.5 rounded-2xl border border-[#dac1c1]/30">
+                    <div className="text-[11px] font-bold text-[#877272] uppercase tracking-wider">Total Attachments</div>
+                    <div className="text-xl font-black text-[#40010d] mt-0.5">{allUploadedMaterials.length} files</div>
+                  </div>
+                  <div className="bg-[#fff8f3] p-3.5 rounded-2xl border border-[#dac1c1]/30">
+                    <div className="text-[11px] font-bold text-[#877272] uppercase tracking-wider">PDF Documents</div>
+                    <div className="text-xl font-black font-sans text-red-800 mt-0.5">
+                      {allUploadedMaterials.filter((m) => m.material.type === "pdf" || m.material.name.toLowerCase().endsWith(".pdf")).length} PDFs
+                    </div>
+                  </div>
+                  <div className="bg-[#fff8f3] p-3.5 rounded-2xl border border-[#dac1c1]/30">
+                    <div className="text-[11px] font-bold text-[#877272] uppercase tracking-wider">Active Subjects</div>
+                    <div className="text-xl font-black text-[#95491a] mt-0.5">
+                      {new Set(allUploadedMaterials.map((m) => m.subjectId)).size} subjects
+                    </div>
+                  </div>
+                  <div className="bg-[#fff8f3] p-3.5 rounded-2xl border border-[#dac1c1]/30">
+                    <div className="text-[11px] font-bold text-[#877272] uppercase tracking-wider">Server Disk Files</div>
+                    <div className="text-xl font-black text-amber-900 mt-0.5">
+                      {isLoadingServerFiles ? "Loading..." : `${serverFiles.length} files`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters Bar */}
+              <div className="bg-white p-4 rounded-3xl border border-[#dac1c1]/20 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+                {/* Search box */}
+                <div className="relative w-full md:w-80">
+                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#877272]" />
+                  <input
+                    type="text"
+                    value={uploadSearch}
+                    onChange={(e) => setUploadSearch(e.target.value)}
+                    placeholder="Search file name, subject, or unit..."
+                    className="w-full bg-[#fff8f3]/60 border border-[#dac1c1] focus:border-[#fd9b65] rounded-xl pl-10 pr-8 py-2.5 text-xs focus:outline-none font-bold"
+                  />
+                  {uploadSearch && (
+                    <button
+                      onClick={() => setUploadSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#877272] hover:text-[#40010d]"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter selects */}
+                <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Filter size={14} className="text-[#95491a]" />
+                    <span className="text-[11px] font-bold text-[#877272] uppercase">Filters:</span>
+                  </div>
+
+                  <select
+                    value={uploadCourseFilter}
+                    onChange={(e) => setUploadCourseFilter(e.target.value)}
+                    className="bg-[#fff8f3]/60 border border-[#dac1c1] focus:border-[#fd9b65] rounded-xl px-3 py-2 text-xs font-bold text-[#40010d]"
+                  >
+                    <option value="all">All Degree Courses</option>
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={uploadTypeFilter}
+                    onChange={(e) => setUploadTypeFilter(e.target.value)}
+                    className="bg-[#fff8f3]/60 border border-[#dac1c1] focus:border-[#fd9b65] rounded-xl px-3 py-2 text-xs font-bold text-[#40010d]"
+                  >
+                    <option value="all">All File Types</option>
+                    <option value="pdf">PDF Documents</option>
+                    <option value="ppt">PowerPoint (PPT)</option>
+                    <option value="image">Images</option>
+                    <option value="doc">Word / Documents</option>
+                    <option value="code">Source Code / Lab Programs</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* CURRICULUM STUDY FILES VIEW */}
+              {uploadDirectoryViewMode === "curriculum" && (
+                <div className="bg-white rounded-3xl border border-[#dac1c1]/20 shadow-xs overflow-hidden">
+                  {filteredUploadedMaterials.length === 0 ? (
+                    <div className="p-12 text-center space-y-3">
+                      <div className="w-12 h-12 bg-amber-50 text-[#95491a] rounded-full flex items-center justify-center mx-auto">
+                        <FileText size={24} />
+                      </div>
+                      <h4 className="font-bold text-[#40010d]">No uploaded files found</h4>
+                      <p className="text-xs text-[#544243] max-w-md mx-auto">
+                        {uploadSearch || uploadTypeFilter !== "all" || uploadCourseFilter !== "all"
+                          ? "No uploads match your search filter criteria. Try clearing search keywords or filters."
+                          : "No study files have been uploaded to the curriculum yet. You can attach PDFs and notes in the Curriculum Editor tab!"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-[#dac1c1]/20">
+                      <div className="bg-[#fff8f3] px-6 py-3 grid grid-cols-12 text-[11px] font-extrabold text-[#877272] uppercase tracking-wider">
+                        <div className="col-span-5 md:col-span-4">File Name & Type</div>
+                        <div className="col-span-4 md:col-span-4 hidden sm:block">Curriculum Context</div>
+                        <div className="col-span-2 hidden md:block">Added Date & Size</div>
+                        <div className="col-span-7 sm:col-span-3 md:col-span-2 text-right">Admin Actions</div>
+                      </div>
+
+                      {filteredUploadedMaterials.map((item, idx) => {
+                        const mat = item.material;
+                        const isPdf = mat.type === "pdf" || mat.name.toLowerCase().endsWith(".pdf");
+                        return (
+                          <div key={mat.id || idx} className="p-4 px-6 grid grid-cols-12 items-center hover:bg-[#fff8f3]/40 transition-colors gap-2">
+                            {/* File Name & Icon */}
+                            <div className="col-span-12 sm:col-span-5 md:col-span-4 flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 font-bold text-xs ${
+                                isPdf ? "bg-red-50 text-red-700" : mat.type === "ppt" ? "bg-orange-50 text-orange-700" : "bg-amber-50 text-[#95491a]"
+                              }`}>
+                                <FileText size={18} />
+                              </div>
+                              <div className="min-w-0 pr-2">
+                                <h5 className="font-bold text-xs text-[#40010d] truncate" title={mat.name}>
+                                  {mat.name}
+                                </h5>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
+                                    isPdf ? "bg-red-100 text-red-800" : "bg-amber-100 text-[#95491a]"
+                                  }`}>
+                                    {mat.type || (isPdf ? "PDF" : "FILE")}
+                                  </span>
+                                  <span className="text-[11px] text-[#877272] sm:hidden">{mat.size || "1 MB"}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Curriculum Context */}
+                            <div className="col-span-12 sm:col-span-4 md:col-span-4 hidden sm:block">
+                              <div className="text-xs font-bold text-[#40010d] truncate">
+                                {item.subjectName}
+                              </div>
+                              <div className="text-[11px] text-[#877272] truncate">
+                                {item.courseName} • {item.semesterName} {item.unitTitle ? `• ${item.unitTitle}` : "• Subject Attachment"}
+                              </div>
+                            </div>
+
+                            {/* Added Date & Size */}
+                            <div className="col-span-2 hidden md:block">
+                              <div className="text-xs font-bold text-[#40010d]">{mat.size || "1.2 MB"}</div>
+                              <div className="text-[11px] text-[#877272]">{mat.addedTime || "Recent"}</div>
+                            </div>
+
+                            {/* Admin Actions */}
+                            <div className="col-span-12 sm:col-span-3 md:col-span-2 flex items-center justify-end gap-1.5 mt-2 sm:mt-0">
+                              {mat.details && (
+                                <a
+                                  href={mat.details}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-2 bg-amber-50 text-[#95491a] hover:bg-[#95491a] hover:text-white rounded-xl transition-all font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                  title="View / Open File"
+                                >
+                                  <Eye size={14} />
+                                </a>
+                              )}
+                              {mat.details && (
+                                <a
+                                  href={mat.details}
+                                  download={mat.name}
+                                  className="p-2 bg-emerald-50 text-emerald-800 hover:bg-emerald-800 hover:text-white rounded-xl transition-all font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                  title="Download File"
+                                >
+                                  <Download size={14} />
+                                </a>
+                              )}
+                              <button
+                                onClick={() => handleDeleteMaterialFromAdmin(mat.id, item.subjectId, item.unitId, mat.details)}
+                                className="p-2 bg-red-50 text-red-700 hover:bg-red-700 hover:text-white rounded-xl transition-all font-bold text-xs cursor-pointer"
+                                title="Delete Upload"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SERVER DISK STORAGE VIEW */}
+              {uploadDirectoryViewMode === "server" && (
+                <div className="bg-white rounded-3xl border border-[#dac1c1]/20 shadow-xs overflow-hidden">
+                  <div className="p-4 bg-[#fff8f3] border-b border-[#dac1c1]/20 flex items-center justify-between">
+                    <div>
+                      <h4 className="font-extrabold text-xs text-[#40010d] uppercase tracking-wider">Disk Storage Folder (`data/uploads`)</h4>
+                      <p className="text-[11px] text-[#544243]">Raw uploaded files permanently retained on the server disk filesystem.</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsLoadingServerFiles(true);
+                        fetch("/api/uploads")
+                          .then((r) => r.json())
+                          .then((d) => Array.isArray(d) && setServerFiles(d))
+                          .finally(() => setIsLoadingServerFiles(false));
+                      }}
+                      className="px-3 py-1.5 bg-[#40010d] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-[#7a2c35] transition-colors cursor-pointer"
+                    >
+                      <RefreshCw size={12} className={isLoadingServerFiles ? "animate-spin" : ""} /> Refresh Server Files
+                    </button>
+                  </div>
+
+                  {serverFiles.length === 0 ? (
+                    <div className="p-12 text-center space-y-3">
+                      <HardDrive size={32} className="text-[#877272] mx-auto" />
+                      <h4 className="font-bold text-[#40010d]">No server disk files found</h4>
+                      <p className="text-xs text-[#544243]">Uploads made via drag-and-drop file upload will show up directly here on disk!</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-[#dac1c1]/20">
+                      {serverFiles.map((file) => (
+                        <div key={file.filename} className="p-4 px-6 flex items-center justify-between hover:bg-[#fff8f3]/40 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-amber-50 text-[#95491a] rounded-2xl flex items-center justify-center font-bold">
+                              <FileText size={18} />
+                            </div>
+                            <div>
+                              <h5 className="font-bold text-xs text-[#40010d]">{file.filename}</h5>
+                              <p className="text-[11px] text-[#877272]">
+                                {(file.sizeBytes / (1024 * 1024)).toFixed(2)} MB • Uploaded {new Date(file.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 bg-amber-50 text-[#95491a] rounded-xl font-bold text-xs hover:bg-[#95491a] hover:text-white transition-all flex items-center gap-1"
+                            >
+                              <Eye size={13} /> View
+                            </a>
+                            <a
+                              href={file.url}
+                              download={file.filename}
+                              className="px-3 py-1.5 bg-emerald-50 text-emerald-800 rounded-xl font-bold text-xs hover:bg-emerald-800 hover:text-white transition-all flex items-center gap-1"
+                            >
+                              <Download size={13} /> Download
+                            </a>
+                            <button
+                              onClick={() => handleDeleteServerFile(file.filename)}
+                              className="p-2 bg-red-50 text-red-700 rounded-xl font-bold text-xs hover:bg-red-700 hover:text-white transition-all cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
