@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Course, Subject, Semester, Unit, StudyMaterial } from "../types";
+import { saveFileToIndexedDB } from "../lib/fileStorage";
 import { 
   ShieldCheck, 
   Lock, 
@@ -412,6 +413,14 @@ export default function AdminPortal({
 
     if (!fileId) {
       fileId = "mat_unit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+    }
+
+    // Save binary file stream into browser IndexedDB for robust multi-session local access
+    await saveFileToIndexedDB(fileId, file);
+
+    // If fileUrl is missing completely, fallback to indexeddb handle
+    if (!fileUrl) {
+      fileUrl = `indexeddb://${fileId}`;
     }
 
     try {

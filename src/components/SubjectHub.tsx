@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
+import { saveFileToIndexedDB, getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
 import { 
   ChevronRight, 
   BookOpen, 
@@ -34,7 +35,8 @@ import {
   Video,
   Image as ImageIcon,
   Presentation,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Maximize2
 } from "lucide-react";
 
 interface SubjectHubProps {
@@ -105,6 +107,10 @@ export default function SubjectHub({
     setActiveYtVideo(null);
   };
 
+  // Material Blob Resolution State
+  const [activeBlobUrl, setActiveBlobUrl] = useState<string | null>(null);
+  const [isLoadingMaterial, setIsLoadingMaterial] = useState<boolean>(false);
+
   // History sync helper for SubjectHub modals
   const openMaterial = (mat: StudyMaterial) => {
     window.history.pushState({ subModal: "material", matId: mat.id }, "");
@@ -113,6 +119,123 @@ export default function SubjectHub({
 
   const closeMaterial = () => {
     setActiveMaterial(null);
+  };
+
+  // Resolve Blob URL when activeMaterial changes
+  useEffect(() => {
+    if (!activeMaterial) {
+      if (activeBlobUrl && activeBlobUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(activeBlobUrl);
+      }
+      setActiveBlobUrl(null);
+      setIsLoadingMaterial(false);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingMaterial(true);
+
+    async function resolveMaterialUrl() {
+      const details = activeMaterial?.details || "";
+
+      try {
+        if (details.startsWith("/api/files/") || details.startsWith("http://") || details.startsWith("https://")) {
+          if (isMounted) setActiveBlobUrl(details);
+        } else if (details.startsWith("indexeddb://")) {
+          const fileId = details.replace("indexeddb://", "");
+          const dbData = await getFileFromIndexedDB(fileId);
+          if (dbData && isMounted) {
+            if (dbData instanceof Blob) {
+              const url = URL.createObjectURL(dbData);
+              setActiveBlobUrl(url);
+            } else if (typeof dbData === "string") {
+              if (dbData.startsWith("data:")) {
+                const blob = base64ToBlob(dbData, activeMaterial?.type === "pdf" ? "application/pdf" : "application/octet-stream");
+                const url = URL.createObjectURL(blob);
+                setActiveBlobUrl(url);
+              } else {
+                setActiveBlobUrl(dbData);
+              }
+            }
+          }
+        } else if (details.startsWith("data:application/pdf")) {
+          const blob = base64ToBlob(details, "application/pdf");
+          const url = URL.createObjectURL(blob);
+          if (isMounted) setActiveBlobUrl(url);
+        } else if (details.startsWith("data:image/")) {
+          const blob = base64ToBlob(details, "image/png");
+          const url = URL.createObjectURL(blob);
+          if (isMounted) setActiveBlobUrl(url);
+        } else {
+          if (isMounted) setActiveBlobUrl(details || null);
+        }
+      } catch (err) {
+        console.error("Error resolving material URL:", err);
+      } finally {
+        if (isMounted) setIsLoadingMaterial(false);
+      }
+    }
+
+    resolveMaterialUrl();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeMaterial]);
+
+  // Safe PDF tab launcher to prevent Microsoft Edge / SmartScreen data/blob URL blocks
+  const handleOpenPdfTab = () => {
+    if (!activeMaterial) return;
+    const targetUrl = activeBlobUrl || (activeMaterial.details && !activeMaterial.details.startsWith("indexeddb://") ? activeMaterial.details : null);
+
+    if (!targetUrl) {
+      alert("Preparing PDF stream, please wait a moment or use Download.");
+      return;
+    }
+
+    // Direct HTTP server file endpoint (e.g. /api/files/file_123.pdf or https://...)
+    if (targetUrl.startsWith("/api/files/") || targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+      window.open(targetUrl, "_blank");
+      return;
+    }
+
+    // For blob: or data: URLs, write an HTML document wrapper inside window.open("")
+    // to prevent Microsoft Edge / Defender SmartScreen top-level navigation blocks
+    const pdfWin = window.open("", "_blank");
+    if (pdfWin) {
+      pdfWin.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>${activeMaterial.name}</title>
+            <style>
+              html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; background: #0f172a; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+              .header { height: 48px; background: #1e293b; color: #ffffff; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #334155; }
+              .title { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%; }
+              .download-btn { background: #f59e0b; color: #0f172a; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; text-decoration: none; }
+              .download-btn:hover { background: #d97706; }
+              .content { width: 100%; height: calc(100vh - 48px); background: #1e293b; }
+              object, iframe, embed { width: 100%; height: 100%; border: none; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <span class="title">📄 ${activeMaterial.name}</span>
+              <a class="download-btn" href="${targetUrl}" download="${activeMaterial.name}">Download PDF</a>
+            </div>
+            <div class="content">
+              <object data="${targetUrl}" type="application/pdf">
+                <embed src="${targetUrl}" type="application/pdf" />
+                <iframe src="${targetUrl}"></iframe>
+              </object>
+            </div>
+          </body>
+        </html>
+      `);
+      pdfWin.document.close();
+    }
   };
 
   const openUnit = (unit: Unit) => {
@@ -145,20 +268,25 @@ export default function SubjectHub({
   // Download File Helper
   const handleDownloadFile = async (material: StudyMaterial) => {
     try {
-      if (material.details && (material.details.startsWith("/api/files/") || material.details.startsWith("http"))) {
-        const res = await fetch(material.details);
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
+      let downloadUrl = activeBlobUrl || material.details || "";
+
+      if (downloadUrl.startsWith("indexeddb://")) {
+        const fileId = downloadUrl.replace("indexeddb://", "");
+        const dbData = await getFileFromIndexedDB(fileId);
+        if (dbData instanceof Blob) {
+          downloadUrl = URL.createObjectURL(dbData);
+        } else if (typeof dbData === "string" && dbData.startsWith("data:")) {
+          const blob = base64ToBlob(dbData, material.type === "pdf" ? "application/pdf" : "application/octet-stream");
+          downloadUrl = URL.createObjectURL(blob);
+        }
+      } else if (downloadUrl.startsWith("data:")) {
+        const blob = base64ToBlob(downloadUrl, material.type === "pdf" ? "application/pdf" : "application/octet-stream");
+        downloadUrl = URL.createObjectURL(blob);
+      }
+
+      if (downloadUrl.startsWith("blob:") || downloadUrl.startsWith("/api/files/") || downloadUrl.startsWith("http")) {
         const link = document.createElement("a");
-        link.href = url;
-        link.download = material.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } else if (material.details && material.details.startsWith("data:")) {
-        const link = document.createElement("a");
-        link.href = material.details;
+        link.href = downloadUrl;
         link.download = material.name;
         document.body.appendChild(link);
         link.click();
@@ -445,6 +573,14 @@ export default function SubjectHub({
 
     if (!fileId) {
       fileId = "mat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+    }
+
+    // Save binary file to IndexedDB for reliable local browser persistence
+    await saveFileToIndexedDB(fileId, file);
+
+    // If fileUrl is missing completely, fallback to indexeddb handle
+    if (!fileUrl) {
+      fileUrl = `indexeddb://${fileId}`;
     }
 
     const newMaterial: StudyMaterial = {
@@ -1611,129 +1747,149 @@ export default function SubjectHub({
 
       </div>
 
-      {/* In-App Study Material Document Viewer Modal */}
+      {/* In-App Study Material Full Screen Document Viewer Canvas */}
       <AnimatePresence>
         {activeMaterial && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 md:p-6">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white w-full max-w-4xl h-[85vh] max-h-[750px] rounded-3xl p-5 md:p-6 shadow-2xl relative border border-[#dac1c1]/30 flex flex-col justify-between overflow-hidden"
-            >
-              {/* Modal Top Header Bar */}
-              <div className="flex flex-wrap justify-between items-center border-b border-[#dac1c1]/20 pb-4 gap-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    materialIconColor(activeMaterial.type)
-                  }`}>
-                    {activeMaterial.type === "code" ? <Terminal size={18} /> : <FileText size={18} />}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-sm text-[#40010d] line-clamp-1">{activeMaterial.name}</h4>
-                      <span className="bg-[#fff2e1] text-[#95491a] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#dac1c1]/30">
-                        {activeMaterial.tag || "Study File"}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-[#877272] block mt-0.5">
-                      {activeMaterial.size} • {activeMaterial.addedTime || "In-App Permanent File"}
+          <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col w-screen h-screen overflow-hidden">
+            {/* Top Navigation Bar */}
+            <div className="bg-[#40010d] text-white px-4 md:px-6 py-3 flex items-center justify-between border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-amber-300 shrink-0">
+                  {activeMaterial.type === "code" ? <Terminal size={18} /> : <FileText size={18} />}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-sm md:text-base text-white truncate">{activeMaterial.name}</h4>
+                    <span className="bg-amber-400/20 text-amber-200 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-amber-300/30 shrink-0">
+                      {activeMaterial.tag || "Study Material"}
                     </span>
                   </div>
-                </div>
-
-                {/* Top Right Actions: Download & Close */}
-                <div className="flex items-center gap-2 ml-auto">
-                  {activeMaterial.details && !activeMaterial.details.startsWith("data:application/pdf") && !activeMaterial.details.startsWith("data:image/") && (
-                    <button
-                      onClick={() => handleCopyContent(activeMaterial.details)}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#544243] text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                      title="Copy content to clipboard"
-                    >
-                      {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                      <span>{copied ? "Copied!" : "Copy"}</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => handleDownloadFile(activeMaterial)}
-                    className="px-4 py-2 bg-[#40010d] hover:bg-[#7a2c35] text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
-                    title="Download file to device"
-                  >
-                    <Download size={14} />
-                    <span>Download</span>
-                  </button>
-
-                  <button
-                    onClick={closeMaterial}
-                    className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-[#40010d] cursor-pointer"
-                    title="Close Viewer"
-                  >
-                    <X size={18} />
-                  </button>
+                  <span className="text-[11px] text-white/70 block truncate mt-0.5">
+                    {activeMaterial.size} • {activeMaterial.addedTime || "Syllabus Resource"}
+                  </span>
                 </div>
               </div>
 
-              {/* In-App Document Viewer Canvas Body */}
-              <div className="my-4 flex-1 w-full overflow-hidden rounded-2xl bg-slate-50 border border-[#dac1c1]/20 p-1 relative">
-                {activeMaterial.details?.startsWith("data:application/pdf") || activeMaterial.name.toLowerCase().endsWith(".pdf") ? (
-                  <div className="w-full h-full rounded-xl overflow-hidden bg-slate-900 flex flex-col">
-                    {activeMaterial.details?.startsWith("data:") || activeMaterial.details?.startsWith("/api/files/") || activeMaterial.details?.startsWith("http") ? (
-                      <object
-                        data={activeMaterial.details}
-                        type="application/pdf"
-                        className="w-full h-full rounded-xl border-0"
-                      >
-                        <iframe
-                          src={activeMaterial.details}
-                          className="w-full h-full rounded-xl border-0"
-                          title={activeMaterial.name}
-                        />
-                      </object>
-                    ) : (
-                      <div className="p-6 bg-[#fffcf9] rounded-2xl text-[#231a0a] text-sm leading-relaxed overflow-y-auto h-full whitespace-pre-wrap font-sans">
-                        {activeMaterial.details}
-                      </div>
-                    )}
-                  </div>
-                ) : activeMaterial.details?.startsWith("data:image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(activeMaterial.name) ? (
-                  <div className="w-full h-full bg-slate-950/5 rounded-xl p-4 flex items-center justify-center overflow-auto">
-                    <img
-                      src={activeMaterial.details}
-                      alt={activeMaterial.name}
-                      className="max-h-full max-w-full object-contain rounded-xl shadow-md"
-                    />
-                  </div>
-                ) : activeMaterial.type === "code" || /\.(js|ts|jsx|tsx|py|java|cpp|c|html|css|json|sh)$/i.test(activeMaterial.name) ? (
-                  <div className="w-full h-full bg-slate-950 text-[#c8eadd] font-mono text-xs rounded-xl p-5 overflow-auto leading-relaxed border border-slate-800">
-                    <pre className="whitespace-pre-wrap break-all">
-                      {activeMaterial.details || "// No code content available."}
-                    </pre>
-                  </div>
-                ) : (
-                  <div className="w-full h-full bg-[#fffcf9] rounded-xl p-6 border border-[#dac1c1]/30 text-[#231a0a] text-sm leading-relaxed overflow-y-auto font-sans whitespace-pre-wrap shadow-inner">
-                    {activeMaterial.details || "This file contains verified syllabus notes compiled for your unit preparation."}
-                  </div>
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 shrink-0">
+                {activeMaterial.details && !activeMaterial.details.startsWith("indexeddb://") && !activeMaterial.details.startsWith("data:") && !activeMaterial.details.startsWith("/api/files/") && (
+                  <button
+                    onClick={() => handleCopyContent(activeMaterial.details)}
+                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="Copy content to clipboard"
+                  >
+                    {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    <span className="hidden sm:inline">{copied ? "Copied!" : "Copy"}</span>
+                  </button>
                 )}
-              </div>
 
-              {/* Modal Bottom Status Footer */}
-              <div className="border-t border-[#dac1c1]/20 pt-3 flex flex-wrap justify-between items-center text-[10px] text-[#877272]">
-                <span className="flex items-center gap-1 font-medium">
-                  <ShieldCheck size={14} className="text-emerald-600" />
-                  Saved permanently on Read Rabbit Application • In-App Viewing Enabled
-                </span>
-
-                <div className="flex gap-2">
+                {/* OPEN FULL PDF IN NEW TAB */}
+                {(activeMaterial.type === "pdf" || activeMaterial.name.toLowerCase().endsWith(".pdf")) && (
                   <button
-                    onClick={closeMaterial}
-                    className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-[#544243] rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    onClick={handleOpenPdfTab}
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    title="Open PDF in Full Screen Tab"
                   >
-                    Close Viewer
+                    <Maximize2 size={14} />
+                    <span className="hidden sm:inline">Open Full Screen Tab</span>
+                    <span className="sm:hidden">Full Screen</span>
                   </button>
-                </div>
+                )}
+
+                {/* DOWNLOAD BUTTON */}
+                <button
+                  onClick={() => handleDownloadFile(activeMaterial)}
+                  className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Download File to Device"
+                >
+                  <Download size={14} />
+                  <span className="hidden sm:inline">Download</span>
+                </button>
+
+                {/* CLOSE BUTTON */}
+                <button
+                  onClick={closeMaterial}
+                  className="p-2 hover:bg-white/10 rounded-xl transition-colors text-white/80 hover:text-white cursor-pointer ml-1"
+                  title="Close Viewer"
+                >
+                  <X size={20} />
+                </button>
               </div>
-            </motion.div>
+            </div>
+
+            {/* Full Screen Viewer Canvas Body */}
+            <div className="flex-1 w-full h-full bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center">
+              {isLoadingMaterial ? (
+                <div className="flex flex-col items-center gap-3 text-white/80">
+                  <div className="w-9 h-9 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-xs font-bold tracking-wide">Preparing document viewer...</p>
+                </div>
+              ) : (activeMaterial.type === "pdf" || activeMaterial.name.toLowerCase().endsWith(".pdf")) ? (
+                <div className="w-full h-full flex flex-col bg-slate-900 relative">
+                  {/* Notice Bar for Mobile & Full Screen Option */}
+                  <div className="bg-amber-500/15 border-b border-amber-500/20 px-4 py-2 text-amber-200 text-xs font-medium flex items-center justify-between shrink-0">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-amber-300" />
+                      PDF Ready in Full Screen Viewer. For native mobile zoom or printing, open full screen tab.
+                    </span>
+                    <button 
+                      onClick={handleOpenPdfTab}
+                      className="underline font-bold text-amber-300 hover:text-amber-100 cursor-pointer ml-2"
+                    >
+                      Open Full Screen Tab ↗
+                    </button>
+                  </div>
+
+                  {/* Native Embedded Full Height PDF Canvas */}
+                  {activeBlobUrl || (activeMaterial.details && !activeMaterial.details.startsWith("indexeddb://")) ? (
+                    <object
+                      data={activeBlobUrl || activeMaterial.details}
+                      type="application/pdf"
+                      className="w-full h-full border-0 bg-slate-800"
+                    >
+                      <embed
+                        src={activeBlobUrl || activeMaterial.details}
+                        type="application/pdf"
+                        className="w-full h-full border-0"
+                      />
+                      <iframe
+                        src={activeBlobUrl || activeMaterial.details}
+                        className="w-full h-full border-0 bg-slate-800"
+                        title={activeMaterial.name}
+                      />
+                    </object>
+                  ) : (
+                    <div className="p-8 text-center text-white/80 space-y-4 my-auto">
+                      <p className="text-sm font-medium">Document content loaded. Click download or full screen tab to inspect.</p>
+                      <button
+                        onClick={() => handleDownloadFile(activeMaterial)}
+                        className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-lg"
+                      >
+                        Download PDF File
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (activeMaterial.type === "image" || /\.(png|jpe?g|gif|webp|svg)$/i.test(activeMaterial.name)) ? (
+                <div className="w-full h-full p-4 flex items-center justify-center overflow-auto bg-slate-950">
+                  <img
+                    src={activeBlobUrl || activeMaterial.details}
+                    alt={activeMaterial.name}
+                    className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+                  />
+                </div>
+              ) : activeMaterial.type === "code" || /\.(js|ts|jsx|tsx|py|java|cpp|c|html|css|json|sh)$/i.test(activeMaterial.name) ? (
+                <div className="w-full h-full p-6 md:p-10 overflow-y-auto bg-slate-950 text-[#c8eadd] font-mono text-xs md:text-sm leading-relaxed border-t border-slate-800">
+                  <pre className="whitespace-pre-wrap break-all">
+                    {activeMaterial.details || "// No code content provided."}
+                  </pre>
+                </div>
+              ) : (
+                <div className="w-full h-full p-6 md:p-12 overflow-y-auto bg-[#fffcf9] text-[#231a0a] text-sm md:text-base leading-relaxed font-sans whitespace-pre-wrap">
+                  {activeMaterial.details || "This file contains verified study notes compiled for your unit preparation."}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </AnimatePresence>
