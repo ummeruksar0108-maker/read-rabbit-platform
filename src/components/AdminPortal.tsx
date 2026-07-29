@@ -284,6 +284,7 @@ export default function AdminPortal({
     });
 
     onUpdateCourses(updatedCourses);
+    handleSaveCurriculumToCloud(updatedCourses);
     setEditingSubject(null);
     setIsAddingSubject(false);
     alert(`Subject "${subName}" successfully saved with ${formUnits.length} dynamic units! 🥕`);
@@ -312,6 +313,7 @@ export default function AdminPortal({
     });
 
     onUpdateCourses(updatedCourses);
+    handleSaveCurriculumToCloud(updatedCourses);
     if (editingSubject?.id === subjectId) {
       setEditingSubject(null);
     }

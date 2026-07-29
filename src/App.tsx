@@ -196,8 +196,8 @@ export default function App() {
         const data = await res.json();
         if (data && Array.isArray(data) && data.length > 0) {
           const serverJson = JSON.stringify(data);
-          // If a local edit happened in the last 8 seconds, don't overwrite local changes
-          if (Date.now() - lastLocalMutationTime.current > 8000) {
+          // If a local edit happened in the last 15 seconds, don't overwrite local changes
+          if (Date.now() - lastLocalMutationTime.current > 15000) {
             setCourses((prevCourses) => {
               if (JSON.stringify(prevCourses) !== serverJson) {
                 console.log("[LIVE CLOUD SYNC] Updated curriculum from server! New uploads synchronized.");
@@ -471,23 +471,24 @@ export default function App() {
 
   // Admin handlers
   const handleUpdateCourses = (updatedCourses: Course[]) => {
+    lastLocalMutationTime.current = Date.now();
     setCourses(updatedCourses);
+    saveCurriculumToServer(updatedCourses);
   };
 
   const handleUpdateSubject = (updatedSubject: Subject) => {
-    if (!selectedCourseId || selectedSemesterId === null) return;
-    
-    setCourses(prev => prev.map(course => {
-      if (course.id !== selectedCourseId) return course;
-      return {
-        ...course,
-        semesters: course.semesters.map(sem => {
-          if (sem.id !== selectedSemesterId) return sem;
+    lastLocalMutationTime.current = Date.now();
+    setCourses(prevCourses => {
+      let found = false;
+      const nextCourses = prevCourses.map(course => {
+        let containsSubject = false;
+        const updatedSemesters = course.semesters.map(sem => {
+          const subIndex = sem.subjects.findIndex(s => s.id === updatedSubject.id);
+          if (subIndex === -1) return sem;
           
-          const updatedSubjects = sem.subjects.map(sub => 
-            sub.id === updatedSubject.id ? updatedSubject : sub
-          );
-          
+          containsSubject = true;
+          found = true;
+          const updatedSubjects = sem.subjects.map(s => s.id === updatedSubject.id ? updatedSubject : s);
           const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
           const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
           const progressPercent = totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0;
@@ -498,47 +499,57 @@ export default function App() {
             completedModules,
             progressPercent
           };
-        })
-      };
-    }));
+        });
+        
+        return containsSubject ? { ...course, semesters: updatedSemesters } : course;
+      });
+
+      if (found) {
+        saveCurriculumToServer(nextCourses);
+        return nextCourses;
+      }
+      return prevCourses;
+    });
   };
 
   const handleAddSubject = (newSubject: Subject) => {
-    if (!selectedCourseId || selectedSemesterId === null) return;
+    lastLocalMutationTime.current = Date.now();
+    const cId = selectedCourseId || courses[0]?.id;
+    const sId = selectedSemesterId ?? 1;
 
-    setCourses(prev => prev.map(course => {
-      if (course.id !== selectedCourseId) return course;
-      return {
-        ...course,
-        semesters: course.semesters.map(sem => {
-          if (sem.id !== selectedSemesterId) return sem;
-          
-          const updatedSubjects = [...sem.subjects, newSubject];
-          const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
-          const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
-          
-          return {
-            ...sem,
-            subjects: updatedSubjects,
-            modulesCount: totalModules,
-            completedModules,
-            progressPercent: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0
-          };
-        })
-      };
-    }));
+    setCourses(prev => {
+      const nextCourses = prev.map(course => {
+        if (course.id !== cId) return course;
+        return {
+          ...course,
+          semesters: course.semesters.map(sem => {
+            if (sem.id !== sId) return sem;
+            
+            const updatedSubjects = [...sem.subjects, newSubject];
+            const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
+            const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
+            
+            return {
+              ...sem,
+              subjects: updatedSubjects,
+              modulesCount: totalModules,
+              completedModules,
+              progressPercent: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0
+            };
+          })
+        };
+      });
+      saveCurriculumToServer(nextCourses);
+      return nextCourses;
+    });
   };
 
   const handleDeleteSubject = (subjectId: string) => {
-    if (!selectedCourseId || selectedSemesterId === null) return;
-
-    setCourses(prev => prev.map(course => {
-      if (course.id !== selectedCourseId) return course;
-      return {
+    lastLocalMutationTime.current = Date.now();
+    setCourses(prev => {
+      const nextCourses = prev.map(course => ({
         ...course,
         semesters: course.semesters.map(sem => {
-          if (sem.id !== selectedSemesterId) return sem;
-          
           const updatedSubjects = sem.subjects.filter(s => s.id !== subjectId);
           const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
           const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
@@ -551,8 +562,10 @@ export default function App() {
             progressPercent: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0
           };
         })
-      };
-    }));
+      }));
+      saveCurriculumToServer(nextCourses);
+      return nextCourses;
+    });
   };
 
   // Exit App handler (Splash trigger)
