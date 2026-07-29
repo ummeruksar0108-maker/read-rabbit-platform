@@ -194,8 +194,8 @@ export default function App() {
         const data = await res.json();
         if (data && Array.isArray(data) && data.length > 0) {
           const serverJson = JSON.stringify(data);
-          // If a local edit happened in the last 15 seconds, don't overwrite local changes
-          if (Date.now() - lastLocalMutationTime.current > 15000) {
+          // If manual call OR no recent local mutation in the last 6 seconds, sync server data
+          if (isManualCall || Date.now() - lastLocalMutationTime.current > 6000) {
             setCourses((prevCourses) => {
               if (JSON.stringify(prevCourses) !== serverJson) {
                 console.log("[LIVE CLOUD SYNC] Updated curriculum from server! New uploads synchronized.");

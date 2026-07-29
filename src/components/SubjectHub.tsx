@@ -1860,15 +1860,17 @@ export default function SubjectHub({
 
                 {/* OPEN FULL PDF IN NEW TAB */}
                 {(activeMaterial.type === "pdf" || activeMaterial.name.toLowerCase().endsWith(".pdf")) && (
-                  <button
-                    onClick={handleOpenPdfTab}
+                  <a
+                    href={activeBlobUrl || (activeMaterial.details && !activeMaterial.details.startsWith("indexeddb://") ? activeMaterial.details : "#")}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                    title="Open PDF in Full Screen Tab"
+                    title="Open PDF in Full Screen Mobile/PC Tab"
                   >
                     <Maximize2 size={14} />
-                    <span className="hidden sm:inline">Open Full Screen Tab</span>
-                    <span className="sm:hidden">Full Screen</span>
-                  </button>
+                    <span className="hidden sm:inline">Open Full Screen Tab ↗</span>
+                    <span className="sm:hidden">Full Screen ↗</span>
+                  </a>
                 )}
 
                 {/* DOWNLOAD BUTTON */}
@@ -1902,37 +1904,83 @@ export default function SubjectHub({
               ) : (activeMaterial.type === "pdf" || activeMaterial.name.toLowerCase().endsWith(".pdf")) ? (
                 <div className="w-full h-full flex flex-col bg-slate-900 relative">
                   {/* Notice Bar for Mobile & Full Screen Option */}
-                  <div className="bg-amber-500/15 border-b border-amber-500/20 px-4 py-2 text-amber-200 text-xs font-medium flex items-center justify-between shrink-0">
+                  <div className="bg-amber-500/15 border-b border-amber-500/20 px-4 py-2 text-amber-200 text-xs font-medium flex flex-wrap items-center justify-between gap-2 shrink-0">
                     <span className="flex items-center gap-1.5">
-                      <Sparkles size={14} className="text-amber-300" />
-                      PDF Ready in Full Screen Viewer. For native mobile zoom or printing, open full screen tab.
+                      <Sparkles size={14} className="text-amber-300 shrink-0" />
+                      <span>Mobile Phone Friendly: Tap below to open or download directly on phone.</span>
                     </span>
-                    <button 
-                      onClick={handleOpenPdfTab}
-                      className="underline font-bold text-amber-300 hover:text-amber-100 cursor-pointer ml-2"
-                    >
-                      Open Full Screen Tab ↗
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <a 
+                        href={activeBlobUrl || activeMaterial.details}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded-lg text-xs transition-all cursor-pointer flex items-center gap-1"
+                      >
+                        <span>📱 Open PDF in Phone Reader ↗</span>
+                      </a>
+                      <button
+                        onClick={() => handleDownloadFile(activeMaterial)}
+                        className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold rounded-lg text-xs transition-all cursor-pointer flex items-center gap-1 border border-slate-700"
+                      >
+                        <Download size={12} />
+                        <span>Download</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Native Embedded Full Height PDF Canvas */}
+                  {/* Desktop Embedded View & Mobile Phone Companion View */}
                   {activeBlobUrl || (activeMaterial.details && !activeMaterial.details.startsWith("indexeddb://")) ? (
-                    <object
-                      data={activeBlobUrl || activeMaterial.details}
-                      type="application/pdf"
-                      className="w-full h-full border-0 bg-slate-800"
-                    >
-                      <embed
-                        src={activeBlobUrl || activeMaterial.details}
+                    <div className="w-full h-full relative bg-slate-900 flex flex-col items-center justify-center overflow-hidden">
+                      {/* Desktop Browser Native PDF Canvas */}
+                      <object
+                        data={activeBlobUrl || activeMaterial.details}
                         type="application/pdf"
-                        className="w-full h-full border-0"
-                      />
-                      <iframe
-                        src={activeBlobUrl || activeMaterial.details}
-                        className="w-full h-full border-0 bg-slate-800"
-                        title={activeMaterial.name}
-                      />
-                    </object>
+                        className="w-full h-full border-0 bg-slate-800 hidden md:block"
+                      >
+                        <embed
+                          src={activeBlobUrl || activeMaterial.details}
+                          type="application/pdf"
+                          className="w-full h-full border-0"
+                        />
+                        <iframe
+                          src={activeBlobUrl || activeMaterial.details}
+                          className="w-full h-full border-0 bg-slate-800"
+                          title={activeMaterial.name}
+                        />
+                      </object>
+
+                      {/* Mobile Phone Card View for iOS Safari / Android Chrome */}
+                      <div className="md:hidden flex flex-col items-center justify-center p-6 text-center text-white space-y-4 max-w-sm mx-auto my-auto bg-slate-800/90 rounded-2xl border border-slate-700 shadow-2xl">
+                        <div className="w-14 h-14 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center shadow-inner">
+                          <FileText size={32} />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="font-extrabold text-sm sm:text-base text-amber-300 truncate max-w-xs">{activeMaterial.name}</h4>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            To view PDF pages & zoom on mobile, tap the button below to launch your phone's native viewer.
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-2.5 w-full pt-2">
+                          <a
+                            href={activeBlobUrl || activeMaterial.details}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95"
+                          >
+                            <Eye size={16} />
+                            <span>📱 Tap to Open PDF on Phone ↗</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadFile(activeMaterial)}
+                            className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-amber-300 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-700 active:scale-95"
+                          >
+                            <Download size={16} />
+                            <span>Download to Mobile Device</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   ) : (
                     <div className="p-8 text-center text-white/80 space-y-4 my-auto">
                       <p className="text-sm font-medium">Document content loaded. Click download or full screen tab to inspect.</p>
