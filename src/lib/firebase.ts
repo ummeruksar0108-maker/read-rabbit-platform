@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import config from "../../firebase-applet-config.json";
 
 // Initialize Firebase App
@@ -11,16 +11,21 @@ export const db = config.firestoreDatabaseId && config.firestoreDatabaseId !== "
   ? getFirestore(app, config.firestoreDatabaseId)
   : getFirestore(app);
 
-// Initialize Firebase Storage
-export const storage = getStorage(app);
+// Initialize Firebase Storage with explicit bucket URL
+const storageBucketName = config.storageBucket || "solid-aquifer-j5fd2.firebasestorage.app";
+export const storage = getStorage(
+  app, 
+  storageBucketName.startsWith("gs://") ? storageBucketName : `gs://${storageBucketName}`
+);
 
 /**
- * Uploads a file to Firebase Storage (with fallback to server /api/upload-file endpoint if needed).
- * Returns the permanent public HTTP download URL along with file metadata.
+ * Uploads a file to Firebase Storage with progress tracking, timeouts, and fallbacks.
+ * Returns permanent URL and metadata for cloud sync across devices.
  */
 export async function uploadFileToCloud(
   file: File,
-  folderPath: string = "study_materials"
+  folderPath: string = "study_materials",
+  onProgress?: (percent: number, statusMsg: string) => void
 ): Promise<{ url: string; name: string; size: string; type: string }> {
   const formattedSize = file.size > 1024 * 1024 
     ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
@@ -36,72 +41,122 @@ export async function uploadFileToCloud(
   const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const storagePath = `${folderPath}/${Date.now()}_${cleanFileName}`;
 
-  // Try uploading to Firebase Storage first
+  // 1. Attempt upload to Firebase Storage with a strict 7-second timeout
   try {
+    if (onProgress) onProgress(5, "Connecting to Firebase Storage...");
     const storageRef = ref(storage, storagePath);
-    console.log("[FIREBASE STORAGE] Uploading file to Firebase Storage:", storagePath);
-    const snapshot = await uploadBytes(storageRef, file);
-    const downloadUrl = await getDownloadURL(snapshot.ref);
-    console.log("[FIREBASE STORAGE] File uploaded successfully! Public URL:", downloadUrl);
+    
+    const downloadUrl = await new Promise<string>((resolve, reject) => {
+      let isSettled = false;
+      const timeoutId = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          reject(new Error("Firebase Storage upload timed out after 7 seconds"));
+        }
+      }, 7000);
+
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on(
+        "state_changed",
+        (snapshot) => {
+          if (isSettled) return;
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          if (onProgress) onProgress(Math.min(pct, 95), `Uploading to Firebase Storage (${pct}%)...`);
+        },
+        (err) => {
+          if (!isSettled) {
+            isSettled = true;
+            clearTimeout(timeoutId);
+            reject(err);
+          }
+        },
+        async () => {
+          if (!isSettled) {
+            isSettled = true;
+            clearTimeout(timeoutId);
+            try {
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve(url);
+            } catch (e) {
+              reject(e);
+            }
+          }
+        }
+      );
+    });
+
+    console.log("[FIREBASE STORAGE] Upload successful! URL:", downloadUrl);
+    if (onProgress) onProgress(100, "Upload complete!");
     return {
       url: downloadUrl,
       name: file.name,
       size: formattedSize,
       type: fileType
     };
-  } catch (storageErr) {
-    console.warn("[FIREBASE STORAGE] Direct upload error, falling back to backend cloud server upload:", storageErr);
+  } catch (storageErr: any) {
+    console.warn("[FIREBASE STORAGE WARN] Direct Firebase Storage failed or timed out:", storageErr?.message || storageErr);
   }
 
-  // Fallback: Upload to shared cloud server endpoint (/api/upload-file)
+  // 2. Fallback: Upload to backend server endpoint (/api/upload-file or /api/upload)
   try {
+    if (onProgress) onProgress(40, "Uploading via backend cloud server...");
+    const controller = new AbortController();
+    const serverTimeout = setTimeout(() => controller.abort(), 6000);
+
     const formData = new FormData();
     formData.append("file", file);
+
     const response = await fetch("/api/upload-file", {
       method: "POST",
-      body: formData
+      body: formData,
+      signal: controller.signal
     });
+    clearTimeout(serverTimeout);
 
-    if (!response.ok) {
-      throw new Error(`Server returned status ${response.status}`);
+    if (response.ok) {
+      const data = await response.json();
+      const rawUrl = data.url || data.fileUrl;
+      if (rawUrl) {
+        const fullUrl = rawUrl.startsWith("http") 
+          ? rawUrl 
+          : `${window.location.origin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
+        console.log("[SERVER CLOUD UPLOAD] Server upload success! URL:", fullUrl);
+        if (onProgress) onProgress(100, "Upload complete!");
+        return {
+          url: fullUrl,
+          name: file.name,
+          size: formattedSize,
+          type: fileType
+        };
+      }
     }
-
-    const data = await response.json();
-    if (data.url) {
-      // Build absolute URL if needed so all devices can resolve it
-      const fullUrl = data.url.startsWith("http") 
-        ? data.url 
-        : `${window.location.origin}${data.url.startsWith("/") ? "" : "/"}${data.url}`;
-
-      console.log("[SERVER CLOUD UPLOAD] Uploaded to server storage! URL:", fullUrl);
-      return {
-        url: fullUrl,
-        name: file.name,
-        size: formattedSize,
-        type: fileType
-      };
-    }
-  } catch (serverErr) {
-    console.error("[SERVER CLOUD UPLOAD] Server upload error:", serverErr);
+  } catch (serverErr: any) {
+    console.warn("[SERVER UPLOAD WARN] Backend upload failed or unavailable:", serverErr?.message || serverErr);
   }
 
-  // Final emergency fallback: convert file to clean data URL if small enough (< 2MB)
-  if (file.size <= 2 * 1024 * 1024) {
+  // 3. Fallback: Base64 Data URL (Self-contained in Firestore for cross-device access)
+  try {
+    if (onProgress) onProgress(70, "Processing file for cross-device cloud sync...");
+    console.log("[DATA URL FALLBACK] Converting file to Data URL for cloud store...");
     const base64Url = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
+      reader.onerror = () => reject(new Error("Failed to read file contents"));
       reader.readAsDataURL(file);
     });
+
+    if (onProgress) onProgress(100, "Processing complete!");
     return {
       url: base64Url,
       name: file.name,
       size: formattedSize,
       type: fileType
     };
+  } catch (base64Err: any) {
+    console.error("[CLOUD UPLOAD ERROR] All storage methods failed:", base64Err);
+    throw new Error(`Failed to upload file: ${base64Err.message || "Unknown error"}`);
   }
-
-  throw new Error("Unable to upload file to cloud storage. Please check your internet connection.");
 }
 
 /**

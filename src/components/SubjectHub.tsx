@@ -542,7 +542,13 @@ export default function SubjectHub({
 
     try {
       console.log(`[PDF UPLOAD TO CLOUD] Calling uploadFileToCloud...`);
-      const cloudResult = await uploadFileToCloud(file, "study_materials");
+      const cloudResult = await uploadFileToCloud(
+        file, 
+        "study_materials",
+        (_pct, statusMsg) => {
+          setUploadSuccess(`⏳ ${statusMsg}`);
+        }
+      );
       fileUrl = cloudResult.url;
       if (cloudResult.size) sizeStr = cloudResult.size;
       console.log("[PDF UPLOAD CLOUD SUCCESS] Permanent public URL:", fileUrl);
