@@ -95,6 +95,34 @@ app.post("/api/curriculum", async (req, res) => {
     if (!courses || !Array.isArray(courses)) {
       return res.status(400).json({ error: "Invalid courses payload" });
     }
+
+    // Helper to process base64 data URLs into server disk files
+    function cleanAndPersistBase64Materials(obj: any) {
+      if (!obj || typeof obj !== "object") return;
+      if (Array.isArray(obj)) {
+        obj.forEach(cleanAndPersistBase64Materials);
+        return;
+      }
+      if (obj.details && typeof obj.details === "string" && obj.details.startsWith("data:")) {
+        try {
+          const matches = obj.details.match(/^data:([^;]+);base64,(.+)$/);
+          if (matches && matches[2]) {
+            const ext = matches[1].includes("pdf") ? ".pdf" : matches[1].includes("png") ? ".png" : matches[1].includes("jpg") || matches[1].includes("jpeg") ? ".jpg" : ".bin";
+            const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+            const targetPath = path.join(UPLOADS_DIR, fileId);
+            fs.writeFileSync(targetPath, Buffer.from(matches[2], "base64"));
+            obj.details = `/api/files/${fileId}`;
+            console.log(`[SERVER AUTO-CONVERT] Extracted base64 file "${obj.name}" -> /api/files/${fileId}`);
+          }
+        } catch (e) {
+          console.warn("[SERVER AUTO-CONVERT WARN] Failed converting base64 material:", e);
+        }
+      }
+      Object.values(obj).forEach(cleanAndPersistBase64Materials);
+    }
+
+    cleanAndPersistBase64Materials(courses);
+
     await fsPromises.writeFile(CURRICULUM_FILE, JSON.stringify(courses, null, 2), "utf-8");
     console.log(`[SERVER SUCCESS] Curriculum updated and saved permanently on server (${courses.length} courses).`);
     return res.json({ success: true, message: "Curriculum saved on server" });

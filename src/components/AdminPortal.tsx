@@ -25,7 +25,10 @@ import {
   Upload,
   Save,
   CloudUpload,
-  ArrowLeft
+  ArrowLeft,
+  Download,
+  RefreshCw,
+  Share2
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -50,8 +53,8 @@ export default function AdminPortal({
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  // Admin Dashboard main tab state: 'curriculum' | 'semesters' | 'notifications' | 'security'
-  const [activeAdminTab, setActiveAdminTab] = useState<"curriculum" | "semesters" | "notifications" | "security">("curriculum");
+  // Admin Dashboard main tab state: 'curriculum' | 'sync' | 'semesters' | 'notifications' | 'security'
+  const [activeAdminTab, setActiveAdminTab] = useState<"curriculum" | "sync" | "semesters" | "notifications" | "security">("curriculum");
 
   // Load admin password from localStorage (default: "admin")
   const [adminPassword, setAdminPassword] = useState(() => {
@@ -101,6 +104,44 @@ export default function AdminPortal({
       console.warn("[ADMIN SAVE ERROR]", err);
     } finally {
       setIsAdminSavingWeb(false);
+    }
+  };
+
+  // Export Curriculum JSON function
+  const handleExportCurriculumJSON = () => {
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(courses, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `read_rabbit_curriculum_backup_${Date.now()}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      alert("Curriculum backup exported! You can now import this file on your phone or any device to transfer all notes & PDFs. 🥕");
+    } catch (e) {
+      alert("Failed to export curriculum JSON file: " + e);
+    }
+  };
+
+  // Import Curriculum JSON function
+  const handleImportCurriculumJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileReader = new FileReader();
+    if (e.target.files && e.target.files[0]) {
+      fileReader.readAsText(e.target.files[0], "UTF-8");
+      fileReader.onload = async (event) => {
+        try {
+          const parsed = JSON.parse(event.target?.result as string);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            onUpdateCourses(parsed);
+            await handleSaveCurriculumToCloud(parsed);
+            alert("Curriculum successfully imported and synchronized! All uploaded PDFs and subjects are now available. 🥕");
+          } else {
+            alert("Invalid curriculum JSON structure.");
+          }
+        } catch (err) {
+          alert("Error parsing JSON file. Please ensure it is a valid Read Rabbit curriculum export.");
+        }
+      };
     }
   };
 
@@ -817,6 +858,7 @@ export default function AdminPortal({
           <div className="flex border-b border-[#dac1c1]/30 gap-2 overflow-x-auto whitespace-nowrap pb-1">
             {[
               { id: "curriculum", label: "Curriculum Editor", icon: BookOpen },
+              { id: "sync", label: "Cross-Device Sync & Backup", icon: RefreshCw },
               { id: "semesters", label: "Manage Semesters", icon: Layers },
               { id: "notifications", label: "Dispatch Board", icon: Bell },
               { id: "security", label: "Credentials Settings", icon: Settings },
@@ -1286,6 +1328,94 @@ export default function AdminPortal({
                 )}
               </div>
 
+            </div>
+          )}
+
+          {/* CROSS-DEVICE SYNC & BACKUP TAB VIEW */}
+          {activeAdminTab === "sync" && (
+            <div className="max-w-4xl mx-auto space-y-6 font-sans">
+              <div className="bg-white p-6 rounded-3xl border border-[#dac1c1]/20 shadow-xs space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-amber-50 text-[#95491a] rounded-2xl flex items-center justify-center shrink-0">
+                    <RefreshCw size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-extrabold text-[#40010d]">Cross-Device Data Sync & Backup</h3>
+                    <p className="text-xs text-[#544243] mt-1 leading-relaxed">
+                      If your app is hosted on static web platforms (like Netlify), uploaded files and edited subjects save inside your browser's local cache. To view uploads on your phone or sync data across devices, export your curriculum backup JSON file below and import it on your phone!
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Export Card */}
+                <div className="bg-white p-6 rounded-3xl border border-[#dac1c1]/20 shadow-xs flex flex-col justify-between space-y-6">
+                  <div className="space-y-3">
+                    <div className="w-10 h-10 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center font-bold">
+                      <Download size={20} />
+                    </div>
+                    <h4 className="font-extrabold text-[#40010d] text-base">Export Curriculum JSON</h4>
+                    <p className="text-xs text-[#544243] leading-relaxed">
+                      Download a single, complete backup file containing all subjects, units, notes, and attached PDF documents from this browser.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleExportCurriculumJSON}
+                    className="w-full py-3.5 bg-[#40010d] hover:bg-[#7a2c35] text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-98"
+                  >
+                    <Download size={16} /> Export Backup File (.json)
+                  </button>
+                </div>
+
+                {/* Import Card */}
+                <div className="bg-white p-6 rounded-3xl border border-[#dac1c1]/20 shadow-xs flex flex-col justify-between space-y-6">
+                  <div className="space-y-3">
+                    <div className="w-10 h-10 bg-orange-50 text-[#95491a] rounded-xl flex items-center justify-center font-bold">
+                      <Upload size={20} />
+                    </div>
+                    <h4 className="font-extrabold text-[#40010d] text-base">Import Curriculum JSON</h4>
+                    <p className="text-xs text-[#544243] leading-relaxed">
+                      Select an exported curriculum JSON file on your phone or second computer to instantly sync all notes and PDF files to this device.
+                    </p>
+                  </div>
+                  <label className="w-full py-3.5 bg-[#f8e6cb] hover:bg-[#fd9b65] text-[#40010d] hover:text-[#341100] rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 text-center">
+                    <Upload size={16} /> Select & Import JSON
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportCurriculumJSON}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Server Auto-Sync Status Card */}
+              <div className="bg-[#fff8f3] p-6 rounded-3xl border border-[#dac1c1]/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CloudUpload size={18} className="text-[#95491a]" />
+                    <h4 className="font-extrabold text-xs text-[#40010d] uppercase tracking-wider">Live Cloud Server Sync</h4>
+                  </div>
+                  <button
+                    onClick={() => handleSaveCurriculumToCloud()}
+                    disabled={isAdminSavingWeb}
+                    className="px-3 py-1.5 bg-[#40010d] text-white rounded-xl text-[11px] font-bold hover:bg-[#7a2c35] transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={12} className={isAdminSavingWeb ? "animate-spin" : ""} />
+                    {isAdminSavingWeb ? "Saving..." : "Force Save to Cloud"}
+                  </button>
+                </div>
+                <p className="text-xs text-[#544243] leading-relaxed">
+                  When deployed on a full-stack container server (such as Cloud Run or Docker with Node Express), all uploads auto-sync live in real-time across every phone and PC connected to the URL!
+                </p>
+                {adminWebSaveSuccess && (
+                  <p className="text-xs font-bold text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                    ✓ Curriculum successfully synchronized to cloud server!
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
