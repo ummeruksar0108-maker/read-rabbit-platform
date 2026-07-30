@@ -21,11 +21,22 @@
         "size": { "type": "string" },
         "type": { "type": "string" },
         "url": { "type": "string" },
+        "dataUrl": { "type": "string" },
         "subjectId": { "type": "string" },
         "unitId": { "type": "string" },
         "uploadedAt": { "type": "string" }
       },
-      "required": ["name", "url"]
+      "required": ["name"]
+    }
+  },
+  "firestore": {
+    "/courses/{courseId}": {
+      "schema": "courses",
+      "description": "Stores core curriculum documents"
+    },
+    "/uploaded_files/{fileId}": {
+      "schema": "uploaded_files",
+      "description": "Stores uploaded file metadata and binary content"
     }
   }
 }

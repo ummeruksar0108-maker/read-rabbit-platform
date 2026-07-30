@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
 import { saveFileToIndexedDB, getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
-import { uploadFileToCloud } from "../lib/firebase";
+import { uploadFileToCloud, getFileContentFromCloud, logDiagnostic } from "../lib/firebase";
 import { 
   ChevronRight, 
   BookOpen, 
@@ -47,7 +47,7 @@ interface SubjectHubProps {
   subject: Subject;
   isAdmin: boolean;
   onBackToSubjects: () => void;
-  onUpdateSubject: (updatedSubject: Subject) => void;
+  onUpdateSubject: (updatedSubject: Subject) => Promise<boolean> | void;
 }
 
 function getYouTubeVideoId(url: string): string | null {
@@ -138,9 +138,17 @@ export default function SubjectHub({
     setIsLoadingMaterial(true);
 
     async function resolveMaterialUrl() {
-      const details = activeMaterial?.details || "";
+      let details = activeMaterial?.details || "";
 
       try {
+        if (details.startsWith("firestore_file://")) {
+          logDiagnostic("info", `Fetching content for ${details} from Firestore 'uploaded_files'...`);
+          const cloudContent = await getFileContentFromCloud(details);
+          if (cloudContent) {
+            details = cloudContent;
+          }
+        }
+
         if (details.startsWith("/api/files/") || details.startsWith("http://") || details.startsWith("https://")) {
           if (isMounted) setActiveBlobUrl(details);
         } else if (details.startsWith("indexeddb://")) {
@@ -160,12 +168,9 @@ export default function SubjectHub({
               }
             }
           }
-        } else if (details.startsWith("data:application/pdf")) {
-          const blob = base64ToBlob(details, "application/pdf");
-          const url = URL.createObjectURL(blob);
-          if (isMounted) setActiveBlobUrl(url);
-        } else if (details.startsWith("data:image/")) {
-          const blob = base64ToBlob(details, "image/png");
+        } else if (details.startsWith("data:")) {
+          const mime = activeMaterial?.type === "pdf" ? "application/pdf" : "application/octet-stream";
+          const blob = base64ToBlob(details, mime);
           const url = URL.createObjectURL(blob);
           if (isMounted) setActiveBlobUrl(url);
         } else {
@@ -304,6 +309,10 @@ export default function SubjectHub({
     markMaterialAsDownloaded(material.id, material.name);
     try {
       let downloadUrl = activeBlobUrl || material.details || "";
+
+      if (downloadUrl.startsWith("firestore_file://")) {
+        downloadUrl = await getFileContentFromCloud(downloadUrl);
+      }
 
       if (downloadUrl.startsWith("indexeddb://")) {
         const fileId = downloadUrl.replace("indexeddb://", "");
@@ -559,13 +568,6 @@ export default function SubjectHub({
       return;
     }
 
-    // Backup save to IndexedDB for offline capability on local browser
-    try {
-      await saveFileToIndexedDB(fileId, file);
-    } catch (e) {
-      console.warn("IndexedDB local backup skipped:", e);
-    }
-
     const newMaterial: StudyMaterial = {
       id: fileId,
       name: name,
@@ -592,10 +594,22 @@ export default function SubjectHub({
       materials: [...(subject.materials || []), newMaterial]
     };
 
-    onUpdateSubject(updatedSubjectObj);
-    setLastUploadedMaterialName(name);
-    setUploadSuccess(`✅ "${name}" successfully uploaded and attached!`);
-    handleManualSaveToWeb(updatedSubjectObj);
+    setUploadSuccess(`⏳ Writing document metadata directly to Firestore Cloud ('courses/main')...`);
+
+    try {
+      const saveRes = await onUpdateSubject(updatedSubjectObj);
+      if (saveRes !== false) {
+        setLastUploadedMaterialName(name);
+        setUploadSuccess(`✅ "${name}" successfully uploaded and saved to Firestore 'courses/main'! Synced across all devices!`);
+        handleManualSaveToWeb(updatedSubjectObj);
+      } else {
+        throw new Error("Firestore save returned unsuccessful status.");
+      }
+    } catch (err: any) {
+      console.error("[UPLOAD FATAL FAIL]", err);
+      setUploadError(`❌ Firestore Cloud Save Failed: ${err.message || "Failed saving curriculum to Firestore."}`);
+      setUploadSuccess("");
+    }
   };
 
   const handleCreateWrittenNote = (targetUnitId: string | null) => {

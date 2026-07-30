@@ -7,8 +7,12 @@ import config from "../../firebase-applet-config.json";
 const app = getApps().length === 0 ? initializeApp(config) : getApp();
 
 // Initialize Firestore Database using the specific databaseId from config if provided
-export const db = config.firestoreDatabaseId && config.firestoreDatabaseId !== "(default)"
-  ? getFirestore(app, config.firestoreDatabaseId)
+const targetDbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== "(default)"
+  ? config.firestoreDatabaseId
+  : "(default)";
+
+export const db = targetDbId !== "(default)"
+  ? getFirestore(app, targetDbId)
   : getFirestore(app);
 
 // Initialize Firebase Storage with explicit bucket URL
@@ -18,9 +22,97 @@ export const storage = getStorage(
   storageBucketName.startsWith("gs://") ? storageBucketName : `gs://${storageBucketName}`
 );
 
+// Diagnostic State Types
+export interface DiagnosticLog {
+  id: string;
+  time: string;
+  message: string;
+  level: "info" | "success" | "warn" | "error";
+}
+
+export interface FirebaseDiagnostics {
+  projectId: string;
+  databaseId: string;
+  storageBucket: string;
+  readStatus: "SUCCESS" | "FAILED" | "CONNECTING" | "IDLE";
+  readSource: string;
+  readDocPath: string;
+  readCourseCount: number;
+  lastReadTime: string;
+  readError: string | null;
+  storageStatus: "SUCCESS" | "FAILED" | "FIRESTORE_DOC" | "IDLE";
+  storageUrl: string | null;
+  storageError: string | null;
+  writeStatus: "SUCCESS" | "FAILED" | "IDLE";
+  writeDocPath: string;
+  writeTimestamp: string | null;
+  writeError: string | null;
+  isFallbackActive: boolean;
+  logs: DiagnosticLog[];
+}
+
+let diagnosticsState: FirebaseDiagnostics = {
+  projectId: config.projectId || "solid-aquifer-j5fd2",
+  databaseId: targetDbId,
+  storageBucket: storageBucketName,
+  readStatus: "IDLE",
+  readSource: "None",
+  readDocPath: "courses/main",
+  readCourseCount: 0,
+  lastReadTime: "Never",
+  readError: null,
+  storageStatus: "IDLE",
+  storageUrl: null,
+  storageError: null,
+  writeStatus: "IDLE",
+  writeDocPath: "courses/main",
+  writeTimestamp: null,
+  writeError: null,
+  isFallbackActive: false,
+  logs: []
+};
+
+type DiagnosticsListener = (diag: FirebaseDiagnostics) => void;
+const listeners = new Set<DiagnosticsListener>();
+
+export function subscribeDiagnostics(listener: DiagnosticsListener): () => void {
+  listeners.add(listener);
+  listener({ ...diagnosticsState });
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyListeners() {
+  const copy = { ...diagnosticsState, logs: [...diagnosticsState.logs] };
+  listeners.forEach(fn => fn(copy));
+}
+
+export function logDiagnostic(level: "info" | "success" | "warn" | "error", message: string) {
+  const time = new Date().toLocaleTimeString();
+  const logItem: DiagnosticLog = {
+    id: "log_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+    time,
+    message,
+    level
+  };
+  diagnosticsState.logs = [logItem, ...diagnosticsState.logs.slice(0, 49)];
+  console.log(`[FIREBASE DIAGNOSTIC ${level.toUpperCase()}] ${message}`);
+  notifyListeners();
+}
+
+function updateDiagnostics(partial: Partial<FirebaseDiagnostics>) {
+  diagnosticsState = { ...diagnosticsState, ...partial };
+  notifyListeners();
+}
+
+export function getDiagnosticsState(): FirebaseDiagnostics {
+  return { ...diagnosticsState };
+}
+
 /**
- * Uploads a file to Firebase Storage with progress tracking, timeouts, and fallbacks.
- * Returns permanent URL and metadata for cloud sync across devices.
+ * Uploads a file to Firebase Storage or falls back to Firestore document storage.
+ * Guarantees cross-device availability.
  */
 export async function uploadFileToCloud(
   file: File,
@@ -40,10 +132,13 @@ export async function uploadFileToCloud(
 
   const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const storagePath = `${folderPath}/${Date.now()}_${cleanFileName}`;
+  const fileId = "mat_file_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
 
-  // 1. Attempt upload to Firebase Storage with a strict 7-second timeout
+  logDiagnostic("info", `Starting cloud upload for "${file.name}" (${formattedSize})...`);
+
+  // 1. Attempt upload to Firebase Storage with a 6-second timeout
   try {
-    if (onProgress) onProgress(5, "Connecting to Firebase Storage...");
+    if (onProgress) onProgress(10, "Connecting to Firebase Storage...");
     const storageRef = ref(storage, storagePath);
     
     const downloadUrl = await new Promise<string>((resolve, reject) => {
@@ -51,9 +146,9 @@ export async function uploadFileToCloud(
       const timeoutId = setTimeout(() => {
         if (!isSettled) {
           isSettled = true;
-          reject(new Error("Firebase Storage upload timed out after 7 seconds"));
+          reject(new Error("Firebase Storage upload timed out after 6 seconds"));
         }
-      }, 7000);
+      }, 6000);
 
       const uploadTask = uploadBytesResumable(storageRef, file);
 
@@ -86,8 +181,14 @@ export async function uploadFileToCloud(
       );
     });
 
-    console.log("[FIREBASE STORAGE] Upload successful! URL:", downloadUrl);
-    if (onProgress) onProgress(100, "Upload complete!");
+    updateDiagnostics({
+      storageStatus: "SUCCESS",
+      storageUrl: downloadUrl,
+      storageError: null
+    });
+    logDiagnostic("success", `[Firebase Storage] Uploaded "${file.name}" successfully! URL: ${downloadUrl}`);
+    if (onProgress) onProgress(100, "Storage upload complete!");
+
     return {
       url: downloadUrl,
       name: file.name,
@@ -95,50 +196,20 @@ export async function uploadFileToCloud(
       type: fileType
     };
   } catch (storageErr: any) {
-    console.warn("[FIREBASE STORAGE WARN] Direct Firebase Storage failed or timed out:", storageErr?.message || storageErr);
-  }
-
-  // 2. Fallback: Upload to backend server endpoint (/api/upload-file or /api/upload)
-  try {
-    if (onProgress) onProgress(40, "Uploading via backend cloud server...");
-    const controller = new AbortController();
-    const serverTimeout = setTimeout(() => controller.abort(), 6000);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch("/api/upload-file", {
-      method: "POST",
-      body: formData,
-      signal: controller.signal
+    const errMsg = storageErr?.message || String(storageErr);
+    updateDiagnostics({
+      storageStatus: "FAILED",
+      storageError: errMsg,
+      storageUrl: null
     });
-    clearTimeout(serverTimeout);
-
-    if (response.ok) {
-      const data = await response.json();
-      const rawUrl = data.url || data.fileUrl;
-      if (rawUrl) {
-        const fullUrl = rawUrl.startsWith("http") 
-          ? rawUrl 
-          : `${window.location.origin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
-        console.log("[SERVER CLOUD UPLOAD] Server upload success! URL:", fullUrl);
-        if (onProgress) onProgress(100, "Upload complete!");
-        return {
-          url: fullUrl,
-          name: file.name,
-          size: formattedSize,
-          type: fileType
-        };
-      }
-    }
-  } catch (serverErr: any) {
-    console.warn("[SERVER UPLOAD WARN] Backend upload failed or unavailable:", serverErr?.message || serverErr);
+    logDiagnostic("warn", `[Firebase Storage] Storage upload failed (${errMsg}). Saving to Firestore collection 'uploaded_files'...`);
   }
 
-  // 3. Fallback: Base64 Data URL (Self-contained in Firestore for cross-device access)
+  // 2. Fallback: Save file document directly to Firestore collection 'uploaded_files'
   try {
-    if (onProgress) onProgress(70, "Processing file for cross-device cloud sync...");
-    console.log("[DATA URL FALLBACK] Converting file to Data URL for cloud store...");
+    if (onProgress) onProgress(60, "Storing file binary into Firestore cloud database...");
+    logDiagnostic("info", `Converting "${file.name}" to base64 Data URL for Firestore collection 'uploaded_files'...`);
+    
     const base64Url = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
@@ -146,16 +217,36 @@ export async function uploadFileToCloud(
       reader.readAsDataURL(file);
     });
 
-    if (onProgress) onProgress(100, "Processing complete!");
+    const fileDocRef = doc(db, "uploaded_files", fileId);
+    const filePayload = {
+      id: fileId,
+      name: file.name,
+      size: formattedSize,
+      type: fileType,
+      dataUrl: base64Url,
+      uploadedAt: new Date().toISOString()
+    };
+
+    await setDoc(fileDocRef, filePayload);
+
+    const cloudFileRefUrl = `firestore_file://${fileId}`;
+    updateDiagnostics({
+      storageStatus: "FIRESTORE_DOC",
+      storageUrl: cloudFileRefUrl
+    });
+    logDiagnostic("success", `[Firestore Cloud] Uploaded file document to 'uploaded_files/${fileId}'!`);
+    if (onProgress) onProgress(100, "Firestore file upload complete!");
+
     return {
-      url: base64Url,
+      url: cloudFileRefUrl,
       name: file.name,
       size: formattedSize,
       type: fileType
     };
-  } catch (base64Err: any) {
-    console.error("[CLOUD UPLOAD ERROR] All storage methods failed:", base64Err);
-    throw new Error(`Failed to upload file: ${base64Err.message || "Unknown error"}`);
+  } catch (firestoreFileErr: any) {
+    const errMsg = firestoreFileErr?.message || String(firestoreFileErr);
+    logDiagnostic("error", `[Cloud Upload CRITICAL FAIL] Failed saving file to cloud: ${errMsg}`);
+    throw new Error(`Upload to Cloud failed: ${errMsg}`);
   }
 }
 
@@ -163,36 +254,32 @@ export async function uploadFileToCloud(
  * Saves the entire curriculum and materials tree to Firebase Firestore.
  */
 export async function saveCoursesToFirestore(coursesData: any[]): Promise<boolean> {
+  logDiagnostic("info", `Writing curriculum payload (${coursesData.length} courses) to Firestore 'courses/main'...`);
   try {
     const courseDocRef = doc(db, "courses", "main");
-    await setDoc(courseDocRef, {
+    const payload = {
       coursesData,
       updatedAt: new Date().toISOString()
+    };
+
+    await setDoc(courseDocRef, payload);
+
+    updateDiagnostics({
+      writeStatus: "SUCCESS",
+      writeDocPath: "courses/main",
+      writeTimestamp: payload.updatedAt,
+      writeError: null
     });
-    console.log("[FIRESTORE] Saved courses and study materials to cloud database!");
-
-    // Also sync with server backend JSON for legacy endpoints
-    fetch("/api/courses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(coursesData)
-    }).catch(err => console.warn("[SERVER SYNC] Fallback sync warning:", err));
-
+    logDiagnostic("success", `[Firestore Cloud] Saved curriculum to 'courses/main' at ${payload.updatedAt}!`);
     return true;
-  } catch (err) {
-    console.error("[FIRESTORE] Error saving to Firestore:", err);
-    // Fallback to server endpoint
-    try {
-      const res = await fetch("/api/courses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(coursesData)
-      });
-      return res.ok;
-    } catch (e) {
-      console.error("[SERVER] Error saving to server fallback:", e);
-      return false;
-    }
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    updateDiagnostics({
+      writeStatus: "FAILED",
+      writeError: errMsg
+    });
+    logDiagnostic("error", `[Firestore Cloud ERROR] Failed writing to 'courses/main': ${errMsg}`);
+    throw new Error(`Firestore Save Failed: ${errMsg}`);
   }
 }
 
@@ -200,18 +287,32 @@ export async function saveCoursesToFirestore(coursesData: any[]): Promise<boolea
  * Loads courses from Firebase Firestore.
  */
 export async function loadCoursesFromFirestore(): Promise<any[] | null> {
+  logDiagnostic("info", "Loading curriculum from Firestore 'courses/main'...");
   try {
     const courseDocRef = doc(db, "courses", "main");
     const docSnap = await getDoc(courseDocRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
       if (data && Array.isArray(data.coursesData) && data.coursesData.length > 0) {
-        console.log("[FIRESTORE] Loaded courses from Firebase Firestore!");
+        updateDiagnostics({
+          readStatus: "SUCCESS",
+          readSource: "Firestore Direct Fetch",
+          readDocPath: "courses/main",
+          readCourseCount: data.coursesData.length,
+          lastReadTime: new Date().toLocaleTimeString(),
+          readError: null
+        });
+        logDiagnostic("success", `[Firestore Cloud] Loaded ${data.coursesData.length} courses from 'courses/main'!`);
         return data.coursesData;
       }
     }
-  } catch (err) {
-    console.warn("[FIRESTORE] Error reading from Firestore:", err);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    updateDiagnostics({
+      readStatus: "FAILED",
+      readError: errMsg
+    });
+    logDiagnostic("error", `[Firestore Cloud Read Error] ${errMsg}`);
   }
   return null;
 }
@@ -220,22 +321,61 @@ export async function loadCoursesFromFirestore(): Promise<any[] | null> {
  * Real-time listener for Firestore courses updates across all devices.
  */
 export function subscribeCoursesFromFirestore(callback: (coursesData: any[]) => void): () => void {
+  logDiagnostic("info", "Attaching real-time listener to Firestore 'courses/main'...");
   try {
     const courseDocRef = doc(db, "courses", "main");
     const unsubscribe = onSnapshot(courseDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data && Array.isArray(data.coursesData) && data.coursesData.length > 0) {
-          console.log("[FIRESTORE REALTIME] Received updated curriculum data from cloud!");
+          updateDiagnostics({
+            readStatus: "SUCCESS",
+            readSource: "Firestore Cloud Realtime Listener",
+            readDocPath: "courses/main",
+            readCourseCount: data.coursesData.length,
+            lastReadTime: new Date().toLocaleTimeString(),
+            readError: null
+          });
+          logDiagnostic("success", `[Firestore Realtime] Live curriculum update (${data.coursesData.length} courses) received!`);
           callback(data.coursesData);
         }
       }
     }, (err) => {
-      console.warn("[FIRESTORE REALTIME] Snapshot subscription error:", err);
+      const errMsg = err?.message || String(err);
+      updateDiagnostics({
+        readStatus: "FAILED",
+        readError: errMsg
+      });
+      logDiagnostic("error", `[Firestore Realtime ERROR] ${errMsg}`);
     });
     return unsubscribe;
-  } catch (err) {
-    console.warn("[FIRESTORE REALTIME] Error setting up listener:", err);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    logDiagnostic("error", `[Firestore Subscription Failed] ${errMsg}`);
     return () => {};
   }
+}
+
+/**
+ * Retrieves file binary or data URL from Firestore uploaded_files if needed.
+ */
+export async function getFileContentFromCloud(fileUrl: string): Promise<string> {
+  if (!fileUrl) return "";
+  if (fileUrl.startsWith("firestore_file://")) {
+    const fileId = fileUrl.replace("firestore_file://", "");
+    logDiagnostic("info", `Fetching content for file document '${fileId}' from Firestore 'uploaded_files'...`);
+    try {
+      const fileDocSnap = await getDoc(doc(db, "uploaded_files", fileId));
+      if (fileDocSnap.exists()) {
+        const fileData = fileDocSnap.data();
+        if (fileData && fileData.dataUrl) {
+          logDiagnostic("success", `[Firestore Cloud] Retrieved binary data for 'uploaded_files/${fileId}'!`);
+          return fileData.dataUrl;
+        }
+      }
+    } catch (err: any) {
+      logDiagnostic("error", `[Firestore File Read Error] ${err?.message || err}`);
+    }
+  }
+  return fileUrl;
 }

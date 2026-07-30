@@ -13,8 +13,9 @@ import SubjectHub from "./components/SubjectHub";
 import ExtraTabs from "./components/ExtraTabs";
 import AdminPortal from "./components/AdminPortal";
 import AddSubjectModal from "./components/AddSubjectModal";
+import FirebaseDiagnosticsPanel from "./components/FirebaseDiagnosticsPanel";
 import { Logo } from "./components/Logo";
-import { saveCoursesToFirestore, loadCoursesFromFirestore, subscribeCoursesFromFirestore } from "./lib/firebase";
+import { saveCoursesToFirestore, loadCoursesFromFirestore, subscribeCoursesFromFirestore, logDiagnostic } from "./lib/firebase";
 
 // Icons for Responsive Top Bar
 import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft, LogOut } from "lucide-react";
@@ -166,28 +167,26 @@ export default function App() {
   const lastLocalMutationTime = useRef<number>(0);
 
   // Helper function to save curriculum directly to shared cloud (Firestore & server)
-  const saveCurriculumToServer = async (coursesToSave: Course[]) => {
+  const saveCurriculumToServer = async (coursesToSave: Course[]): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
+    let isSuccess = false;
     try {
-      await saveCoursesToFirestore(coursesToSave);
+      isSuccess = await saveCoursesToFirestore(coursesToSave);
       setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-    } catch (err) {
-      console.warn("[CLIENT WARN] Failed to save curriculum to Firestore:", err);
+    } catch (err: any) {
+      console.error("[FIRESTORE WRITE ERROR] Failed to save curriculum to Firestore:", err);
+      logDiagnostic("error", `Firestore save failed: ${err?.message || err}`);
+      throw err;
     }
     try {
-      await fetch("/api/curriculum", {
+      fetch("/api/curriculum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courses: coursesToSave })
-      });
-    } catch (err) {
-      console.warn("[CLIENT WARN] Failed to save curriculum to server API:", err);
-    }
-    try {
-      localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(coursesToSave));
-    } catch (e) {
-      // LocalStorage quota fallback
-    }
+      }).catch(() => {});
+    } catch (err) {}
+
+    return isSuccess;
   };
 
   // Helper function to fetch latest curriculum from shared cloud
@@ -248,15 +247,13 @@ export default function App() {
     const unsubscribe = subscribeCoursesFromFirestore((cloudCourses) => {
       if (cloudCourses && Array.isArray(cloudCourses) && cloudCourses.length > 0) {
         const cloudJson = JSON.stringify(cloudCourses);
-        if (Date.now() - lastLocalMutationTime.current > 3000) {
-          setCourses((prev) => {
-            if (JSON.stringify(prev) !== cloudJson) {
-              console.log("[FIRESTORE REALTIME SYNC] Live update received from Cloud!");
-              return cloudCourses;
-            }
-            return prev;
-          });
-        }
+        setCourses((prev) => {
+          if (JSON.stringify(prev) !== cloudJson) {
+            console.log("[FIRESTORE REALTIME SYNC] Live update received from Cloud!");
+            return cloudCourses;
+          }
+          return prev;
+        });
       }
     });
 
@@ -508,11 +505,13 @@ export default function App() {
     saveCurriculumToServer(updatedCourses);
   };
 
-  const handleUpdateSubject = (updatedSubject: Subject) => {
+  const handleUpdateSubject = async (updatedSubject: Subject): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
+    let found = false;
+    let nextCourses: Course[] = [];
+
     setCourses(prevCourses => {
-      let found = false;
-      const nextCourses = prevCourses.map(course => {
+      nextCourses = prevCourses.map(course => {
         let containsSubject = false;
         const updatedSemesters = course.semesters.map(sem => {
           const subIndex = sem.subjects.findIndex(s => s.id === updatedSubject.id);
@@ -536,12 +535,13 @@ export default function App() {
         return containsSubject ? { ...course, semesters: updatedSemesters } : course;
       });
 
-      if (found) {
-        saveCurriculumToServer(nextCourses);
-        return nextCourses;
-      }
-      return prevCourses;
+      return found ? nextCourses : prevCourses;
     });
+
+    if (found && nextCourses.length > 0) {
+      return await saveCurriculumToServer(nextCourses);
+    }
+    return false;
   };
 
   const handleAddSubject = (newSubject: Subject) => {
