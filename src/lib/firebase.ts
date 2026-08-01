@@ -151,19 +151,30 @@ export async function uploadFileToCloud(
   }
 }
 
+let firestoreQuotaExceededUntil = typeof window !== "undefined" && window.sessionStorage?.getItem("firestore_quota_exceeded") ? Date.now() + 86400000 : 0;
+
 /**
  * Saves the entire curriculum and materials tree to Firebase Firestore.
  */
 export async function saveCoursesToFirestore(coursesData: any[]): Promise<boolean> {
+  if (Date.now() < firestoreQuotaExceededUntil || (typeof window !== "undefined" && window.sessionStorage?.getItem("firestore_quota_exceeded"))) {
+    console.warn("[Firestore Quota Skip] Skipping Firestore write because free tier daily write quota was exceeded. Relying on Supabase, Express server & local storage.");
+    return false;
+  }
+
   logDiagnostic("info", `Writing curriculum payload (${coursesData.length} courses) to Firestore 'courses/main'...`);
   try {
     const courseDocRef = doc(db, "courses", "main");
+    const cleanCoursesData = JSON.parse(JSON.stringify(coursesData));
     const payload = {
-      coursesData,
+      coursesData: cleanCoursesData,
       updatedAt: new Date().toISOString()
     };
 
     await setDoc(courseDocRef, payload);
+
+    firestoreQuotaExceededUntil = 0; // Reset on success
+    if (typeof window !== "undefined") window.sessionStorage?.removeItem("firestore_quota_exceeded");
 
     updateDiagnostics({
       writeStatus: "SUCCESS",
@@ -175,12 +186,22 @@ export async function saveCoursesToFirestore(coursesData: any[]): Promise<boolea
     return true;
   } catch (err: any) {
     const errMsg = err?.message || String(err);
+    const isQuotaError = errMsg.includes("resource-exhausted") || errMsg.includes("Quota limit exceeded") || err?.code === "resource-exhausted";
+    
+    if (isQuotaError) {
+      firestoreQuotaExceededUntil = Date.now() + 86400000; // Cool down Firestore write calls for 24 hours
+      if (typeof window !== "undefined") {
+        try { window.sessionStorage?.setItem("firestore_quota_exceeded", "true"); } catch (e) {}
+      }
+      console.warn("[Firestore Quota Exceeded] Daily free tier write quota reached. App is seamlessly falling back to Supabase, Express server & localStorage.");
+    }
+
     updateDiagnostics({
       writeStatus: "FAILED",
-      writeError: errMsg,
+      writeError: isQuotaError ? "Firestore Daily Write Quota Exceeded (Saved to Supabase, Express Server & Local Storage instead)" : errMsg,
       isFallbackActive: true
     });
-    logDiagnostic("warn", `[Firestore Write Notice] ${errMsg}. Saved curriculum locally and to backend server instead.`);
+    logDiagnostic("warn", `[Firestore Write Notice] ${errMsg}`);
     return false;
   }
 }

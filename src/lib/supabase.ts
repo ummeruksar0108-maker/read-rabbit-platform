@@ -31,6 +31,145 @@ export interface UploadResult {
 }
 
 /**
+ * Inserts metadata record for an uploaded material directly into Supabase PostgreSQL table 'study_materials'.
+ */
+export async function insertMaterialToSupabaseDB(material: UploadResult): Promise<UploadResult> {
+  const isInvalidUrl = !supabaseUrl || supabaseUrl.includes("placeholder") || supabaseUrl.includes("your-project");
+  const isInvalidKey = !supabaseAnonKey || supabaseAnonKey.includes("placeholder") || supabaseAnonKey.includes("your-anon-key");
+
+  if (isInvalidUrl || isInvalidKey) {
+    throw new Error(
+      "Supabase credentials missing or invalid! Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment."
+    );
+  }
+
+  logDiagnostic("info", `[Supabase DB] Inserting metadata for "${material.name}" into 'study_materials' table (courseId: ${material.courseId}, semesterId: ${material.semesterId}, subjectId: ${material.subjectId}, unitId: ${material.unitId})...`);
+
+  const { data, error } = await supabase
+    .from("study_materials")
+    .insert([
+      {
+        id: material.id,
+        name: material.name,
+        type: material.type,
+        size: material.size,
+        public_url: material.publicUrl,
+        cloud_path: material.cloudPath,
+        course_id: material.courseId,
+        semester_id: material.semesterId,
+        subject_id: material.subjectId,
+        unit_id: material.unitId,
+        uploaded_at: material.uploadedAt
+      }
+    ])
+    .select();
+
+  if (error) {
+    logDiagnostic("error", `[Supabase DB Insert Error] ${error.message}`);
+    throw new Error(`Supabase Database Insert Failed: ${error.message}`);
+  }
+
+  logDiagnostic("success", `[Supabase DB Insert Success] Metadata for "${material.name}" saved to PostgreSQL study_materials table!`);
+  return material;
+}
+
+/**
+ * Fetches all study materials from Supabase PostgreSQL table 'study_materials' for a specific subject or unit.
+ */
+export async function fetchMaterialsFromSupabaseDB(subjectId?: string, unitId?: string): Promise<UploadResult[]> {
+  const isInvalidUrl = !supabaseUrl || supabaseUrl.includes("placeholder") || supabaseUrl.includes("your-project");
+  if (isInvalidUrl) return [];
+
+  try {
+    let query = supabase.from("study_materials").select("*");
+    if (unitId) {
+      query = query.eq("unit_id", unitId);
+    } else if (subjectId) {
+      query = query.eq("subject_id", subjectId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn("[Supabase DB Fetch Warning]", error.message);
+      return [];
+    }
+
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      type: row.type || "pdf",
+      size: row.size,
+      publicUrl: row.public_url,
+      cloudPath: row.cloud_path,
+      courseId: row.course_id,
+      semesterId: row.semester_id,
+      subjectId: row.subject_id,
+      unitId: row.unit_id,
+      uploadedAt: row.uploaded_at || new Date().toISOString()
+    }));
+  } catch (err) {
+    console.warn("[Supabase DB Fetch Error]", err);
+    return [];
+  }
+}
+
+/**
+ * Fetches all study materials from Supabase PostgreSQL table 'study_materials' across the entire app.
+ */
+export async function fetchAllMaterialsFromSupabaseDB(): Promise<UploadResult[]> {
+  const isInvalidUrl = !supabaseUrl || supabaseUrl.includes("placeholder") || supabaseUrl.includes("your-project");
+  if (isInvalidUrl) return [];
+
+  try {
+    const { data, error } = await supabase.from("study_materials").select("*");
+    if (error) {
+      console.warn("[Supabase DB Fetch All Warning]", error.message);
+      return [];
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      type: row.type || "pdf",
+      size: row.size,
+      publicUrl: row.public_url,
+      cloudPath: row.cloud_path,
+      courseId: row.course_id,
+      semesterId: row.semester_id,
+      subjectId: row.subject_id,
+      unitId: row.unit_id,
+      uploadedAt: row.uploaded_at || new Date().toISOString()
+    }));
+  } catch (err) {
+    console.warn("[Supabase DB Fetch All Error]", err);
+    return [];
+  }
+}
+
+/**
+ * Deletes material metadata row from Supabase DB and deletes file from Storage bucket.
+ */
+export async function deleteMaterialFromSupabase(id: string, cloudPath?: string): Promise<boolean> {
+  try {
+    if (cloudPath) {
+      await deleteFileFromSupabaseStorage(cloudPath);
+    }
+    const { error } = await supabase.from("study_materials").delete().eq("id", id);
+    if (error) {
+      logDiagnostic("warn", `[Supabase DB Delete Warning] ${error.message}`);
+      return false;
+    }
+    logDiagnostic("success", `[Supabase DB Delete Success] Material ${id} deleted.`);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
  * Uploads a file directly to Supabase Storage bucket 'study-materials'.
  * Returns publicUrl and complete cloud metadata for shared cross-device access.
  */

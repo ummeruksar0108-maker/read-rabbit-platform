@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Course, Subject, Semester, Unit, StudyMaterial } from "../types";
 import { uploadFileToCloud } from "../lib/firebase";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage } from "../lib/supabase";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB } from "../lib/supabase";
 import { 
   ShieldCheck, 
   Lock, 
@@ -550,8 +550,14 @@ export default function AdminPortal({
         }
       );
       console.log("[ADMIN UPLOAD SUPABASE SUCCESS] Permanent public URL:", cloudRes.publicUrl);
+
+      // Save metadata to Supabase PostgreSQL table 'study_materials'
+      await insertMaterialToSupabaseDB(cloudRes);
     } catch (uploadErr: any) {
-      console.error("[ADMIN CLOUD UPLOAD ERROR] Failed uploading to Supabase Storage:", uploadErr);
+      console.error("[ADMIN CLOUD UPLOAD ERROR] Failed uploading to Supabase Storage or Database:", uploadErr);
+      if (cloudRes?.cloudPath) {
+        await deleteFileFromSupabaseStorage(cloudRes.cloudPath).catch(() => {});
+      }
       alert(`Upload error: ${uploadErr.message || "Failed to upload file to cloud."}`);
       return;
     }
@@ -605,17 +611,14 @@ export default function AdminPortal({
             })
           };
         });
-        await onUpdateCourses(updatedCourses);
-        await handleSaveCurriculumToCloud(updatedCourses);
+        onUpdateCourses(updatedCourses);
         setEditingSubject({
           ...editingSubject,
           units: updatedFormUnits
         });
-      } else {
-        await handleSaveCurriculumToCloud();
       }
 
-      alert(`"${cloudRes.name}" successfully uploaded and saved to Supabase Cloud Storage! 🥕`);
+      alert(`"${cloudRes.name}" successfully uploaded and saved to Supabase study_materials table! 🥕`);
     } catch (err: any) {
       console.error("[ADMIN UPLOAD FATAL ERROR]", err);
       alert(`Upload failed: ${err.message || "Could not save file"}`);

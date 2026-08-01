@@ -193,17 +193,14 @@ export default function App() {
       console.warn("[EXPRESS BACKEND SAVE WARN]", err);
     }
 
-    // 3. Sync to Firestore Cloud (gracefully handle quota limits or network blocks)
+    // 3. Save to Firestore Cloud document courses/main (if quota allows)
     try {
       const fsSuccess = await saveCoursesToFirestore(coursesToSave);
       if (fsSuccess) {
         setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-        isSuccess = true;
       }
-    } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      console.warn("[FIRESTORE SYNC NOTICE]", errMsg);
-      logDiagnostic("warn", `Firestore sync notice: ${errMsg}. Saved curriculum to server & localStorage.`);
+    } catch (err) {
+      console.warn("[FIRESTORE WRITE NOTICE]", err);
     }
 
     return isSuccess;

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
 import { getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
 import { uploadFileToCloud, getFileContentFromCloud, logDiagnostic } from "../lib/firebase";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage } from "../lib/supabase";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB, fetchMaterialsFromSupabaseDB, UploadResult } from "../lib/supabase";
 import { 
   ChevronRight, 
   BookOpen, 
@@ -521,6 +521,88 @@ export default function SubjectHub({
     onUpdateSubject({ ...subject, units: updatedUnits });
   };
 
+  // Automatically fetch study materials stored in Supabase PostgreSQL table 'study_materials'
+  useEffect(() => {
+    let isMounted = true;
+    async function syncSupabaseMaterials() {
+      const fetched = await fetchMaterialsFromSupabaseDB(subject.id);
+      if (!isMounted || fetched.length === 0) return;
+
+      let hasNewMaterials = false;
+      const updatedUnits = subject.units.map(unit => {
+        const unitFetched = fetched.filter(f => f.unitId === unit.id);
+        if (unitFetched.length === 0) return unit;
+
+        const existingIds = new Set((unit.materials || []).map(m => m.id));
+        const newUnitMats: StudyMaterial[] = unitFetched
+          .filter(f => !existingIds.has(f.id))
+          .map(f => ({
+            id: f.id,
+            name: f.name,
+            size: f.size,
+            addedTime: "Uploaded by Admin",
+            type: f.type,
+            isBookmarked: false,
+            tag: "Unit File",
+            details: f.publicUrl,
+            cloudPath: f.cloudPath,
+            publicUrl: f.publicUrl,
+            uploadedAt: f.uploadedAt,
+            courseId: f.courseId,
+            semesterId: f.semesterId,
+            subjectId: f.subjectId,
+            unitId: f.unitId
+          }));
+
+        if (newUnitMats.length > 0) {
+          hasNewMaterials = true;
+          return {
+            ...unit,
+            materials: [...(unit.materials || []), ...newUnitMats]
+          };
+        }
+        return unit;
+      });
+
+      const subjectGeneralFetched = fetched.filter(f => f.unitId === "subject_general" || !f.unitId);
+      const existingSubMatIds = new Set((subject.materials || []).map(m => m.id));
+      const newSubMats: StudyMaterial[] = subjectGeneralFetched
+        .filter(f => !existingSubMatIds.has(f.id))
+        .map(f => ({
+          id: f.id,
+          name: f.name,
+          size: f.size,
+          addedTime: "Uploaded by Admin",
+          type: f.type,
+          isBookmarked: false,
+          tag: "Subject File",
+          details: f.publicUrl,
+          cloudPath: f.cloudPath,
+          publicUrl: f.publicUrl,
+          uploadedAt: f.uploadedAt,
+          courseId: f.courseId,
+          semesterId: f.semesterId,
+          subjectId: f.subjectId,
+          unitId: f.unitId
+        }));
+
+      if (newSubMats.length > 0) {
+        hasNewMaterials = true;
+      }
+
+      if (hasNewMaterials) {
+        onUpdateSubject({
+          ...subject,
+          units: updatedUnits,
+          materials: [...(subject.materials || []), ...newSubMats]
+        });
+      }
+    }
+
+    syncSupabaseMaterials();
+    return () => { isMounted = false; };
+  }, [subject.id]);
+
   const handleProcessFile = async (file: File, targetUnitId: string | null) => {
     if (!isAdmin) {
       alert("Only administrator account can upload files or notes.");
@@ -540,10 +622,12 @@ export default function SubjectHub({
 
     setIsUploadingFile(true);
     console.log(`[UPLOAD FILE SELECTED] Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`);
-    setUploadSuccess(`⏳ Uploading "${file.name}" to Supabase Cloud Storage...`);
+    setUploadSuccess(`⏳ Step 1/2: Uploading "${file.name}" to Supabase Cloud Storage...`);
 
+    let cloudRes: UploadResult | null = null;
     try {
-      const cloudRes = await uploadFileToSupabaseStorage(
+      // 1. Upload to Supabase Storage
+      cloudRes = await uploadFileToSupabaseStorage(
         file,
         {
           courseId: courseName || "course",
@@ -552,11 +636,19 @@ export default function SubjectHub({
           unitId: targetUnitId || "subject_general"
         },
         (_pct, statusMsg) => {
-          setUploadSuccess(`⏳ ${statusMsg}`);
+          setUploadSuccess(`⏳ Step 1/2: ${statusMsg}`);
         }
       );
-      console.log("[PDF UPLOAD CLOUD SUCCESS] Permanent public URL:", cloudRes.publicUrl);
-      setUploadSuccess(`✓ Uploaded "${cloudRes.name}" to Supabase! Saving metadata to Firestore Cloud...`);
+      console.log("[STORAGE UPLOAD SUCCESS] Public URL:", cloudRes.publicUrl);
+
+      const logCoordinates = `courseId: "${cloudRes.courseId}", semesterId: "${cloudRes.semesterId}", subjectId: "${cloudRes.subjectId}", unitId: "${cloudRes.unitId}", materialName: "${cloudRes.name}"`;
+      console.log(`[SUPABASE DB METADATA SAVE] Inserting metadata row into 'study_materials': ${logCoordinates}`);
+      logDiagnostic("info", `[SUPABASE DB METADATA SAVE] ${logCoordinates}`);
+
+      setUploadSuccess(`⏳ Step 2/2: Inserting metadata row into Supabase PostgreSQL 'study_materials' table...`);
+
+      // 2. Insert metadata into Supabase PostgreSQL table 'study_materials'
+      await insertMaterialToSupabaseDB(cloudRes);
 
       const newMaterial: StudyMaterial = {
         id: cloudRes.id,
@@ -590,16 +682,24 @@ export default function SubjectHub({
         materials: [...(subject.materials || []), newMaterial]
       };
 
-      const saveRes = await onUpdateSubject(updatedSubjectObj);
-      if (saveRes !== false) {
-        setLastUploadedMaterialName(cloudRes.name);
-        setUploadSuccess(`✅ "${cloudRes.name}" successfully uploaded to Supabase Storage and saved to Firestore! Synced across all devices!`);
-      } else {
-        throw new Error("Firestore save returned unsuccessful status.");
-      }
+      // 3. Update subject state locally (no Firestore write)
+      onUpdateSubject(updatedSubjectObj);
+
+      setLastUploadedMaterialName(cloudRes.name);
+      setUploadSuccess(`✅ "${cloudRes.name}" successfully uploaded to Supabase Storage and metadata saved to Supabase study_materials table! Synced across all devices.`);
     } catch (err: any) {
-      console.error("[UPLOAD FATAL FAIL]", err);
-      setUploadError(`❌ Upload / Cloud Save Failed: ${err.message || "Failed saving curriculum to Firestore."}`);
+      console.error("[UPLOAD / SUPABASE DB INSERT FAIL]", err);
+      const exactError = err?.message || String(err);
+
+      if (cloudRes?.cloudPath) {
+        console.warn(`[CLEANUP ORPHAN FILE] Deleting orphan file "${cloudRes.cloudPath}" from Supabase Storage...`);
+        setUploadSuccess(`⚠️ Database insert failed. Cleaning up orphan file from Supabase Storage...`);
+        await deleteFileFromSupabaseStorage(cloudRes.cloudPath).catch(delErr => {
+          console.error("Failed to delete orphan file from Supabase Storage:", delErr);
+        });
+      }
+
+      setUploadError(`❌ Upload / Database Save Failed: ${exactError}`);
       setUploadSuccess("");
     } finally {
       setIsUploadingFile(false);
