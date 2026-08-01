@@ -63,10 +63,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Authentication State
-  const [isAdmin, setIsAdmin] = useState(() => {
-    return localStorage.getItem("read_rabbit_is_admin") === "true";
-  });
-
+  const [isAdmin, setIsAdmin] = useState(false);
   // Modal control states
   const [isAddSubjectOpen, setIsAddSubjectOpen] = useState(false);
 
@@ -250,10 +247,7 @@ export default function App() {
     localStorage.setItem("read_rabbit_active_tab", activeTab);
   }, [activeTab]);
 
-  useEffect(() => {
-    localStorage.setItem("read_rabbit_is_admin", isAdmin ? "true" : "false");
-  }, [isAdmin]);
-
+  
   // Helper to verify single configured admin email
   const isApprovedAdminEmail = (userEmail?: string | null): boolean => {
     if (!userEmail) return false;
