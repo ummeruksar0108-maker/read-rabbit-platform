@@ -15,7 +15,7 @@ import AdminPortal from "./components/AdminPortal";
 import AddSubjectModal from "./components/AddSubjectModal";
 import FirebaseDiagnosticsPanel from "./components/FirebaseDiagnosticsPanel";
 import { Logo } from "./components/Logo";
-import { saveCoursesToFirestore, loadCoursesFromFirestore, subscribeCoursesFromFirestore, logDiagnostic } from "./lib/firebase";
+import { logDiagnostic } from "./lib/firebase";
 
 // Icons for Responsive Top Bar
 import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft, LogOut } from "lucide-react";
@@ -166,87 +166,34 @@ export default function App() {
   const isFetchingFromServer = useRef(false);
   const lastLocalMutationTime = useRef<number>(0);
 
-  // Helper function to save curriculum directly to shared cloud (Firestore & server)
+  // Helper function to save curriculum structure locally
   const saveCurriculumToServer = async (coursesToSave: Course[]): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
-    let isSuccess = false;
-
-    // 1. Immediately persist to localStorage
     try {
       localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(coursesToSave));
-      isSuccess = true;
+      setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      return true;
     } catch (e) {
       console.warn("[LOCALSTORAGE SAVE WARN]", e);
+      return false;
     }
-
-    // 2. Persist to Express server disk storage (/api/curriculum)
-    try {
-      const res = await fetch("/api/curriculum", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courses: coursesToSave })
-      });
-      if (res.ok) {
-        isSuccess = true;
-      }
-    } catch (err) {
-      console.warn("[EXPRESS BACKEND SAVE WARN]", err);
-    }
-
-    // 3. Save to Firestore Cloud document courses/main (if quota allows)
-    try {
-      const fsSuccess = await saveCoursesToFirestore(coursesToSave);
-      if (fsSuccess) {
-        setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-      }
-    } catch (err) {
-      console.warn("[FIRESTORE WRITE NOTICE]", err);
-    }
-
-    return isSuccess;
   };
 
-  // Helper function to fetch latest curriculum from shared cloud
+  // Helper function to fetch latest curriculum from local storage
   const fetchCurriculumFromServer = async (isManualCall = false) => {
     if (isManualCall) setIsSyncingServer(true);
     isFetchingFromServer.current = true;
     try {
-      const cloudData = await loadCoursesFromFirestore();
-      if (cloudData && Array.isArray(cloudData) && cloudData.length > 0) {
-        const cloudJson = JSON.stringify(cloudData);
-        if (isManualCall || Date.now() - lastLocalMutationTime.current > 3000) {
-          setCourses((prevCourses) => {
-            if (JSON.stringify(prevCourses) !== cloudJson) {
-              console.log("[FIRESTORE CLOUD SYNC] Updated curriculum from Firestore Cloud!");
-              return cloudData;
-            }
-            return prevCourses;
-          });
-        }
-        setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-        try {
-          localStorage.setItem("read_rabbit_curriculum_v2", cloudJson);
-        } catch (e) {}
-      } else {
-        const res = await fetch("/api/curriculum");
-        if (res.ok) {
-          const data = await res.json();
-          if (data && Array.isArray(data) && data.length > 0) {
-            const serverJson = JSON.stringify(data);
-            if (isManualCall || Date.now() - lastLocalMutationTime.current > 3000) {
-              setCourses((prevCourses) => {
-                if (JSON.stringify(prevCourses) !== serverJson) {
-                  return data;
-                }
-                return prevCourses;
-              });
-            }
-            setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-          }
+      const saved = localStorage.getItem("read_rabbit_curriculum_v2");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCourses(parsed);
+          setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
         }
       }
     } catch (err) {
-      console.warn("[CLOUD SYNC WARN] Server/Firestore fetch error:", err);
+      console.warn("[CURRICULUM FETCH WARN]", err);
     } finally {
       isInitialServerFetchDone.current = true;
       setTimeout(() => {
@@ -256,40 +203,9 @@ export default function App() {
     }
   };
 
-  // Fetch curriculum permanently from shared cloud + Real-time Firestore subscriber + Window Focus listener
+  // Load initial curriculum state on component mount
   useEffect(() => {
     fetchCurriculumFromServer();
-
-    // Subscribe to Firestore real-time updates across all devices (phones, laptops, tabs)
-    const unsubscribe = subscribeCoursesFromFirestore((cloudCourses) => {
-      if (cloudCourses && Array.isArray(cloudCourses) && cloudCourses.length > 0) {
-        const cloudJson = JSON.stringify(cloudCourses);
-        setCourses((prev) => {
-          if (JSON.stringify(prev) !== cloudJson) {
-            console.log("[FIRESTORE REALTIME SYNC] Live update received from Cloud!");
-            return cloudCourses;
-          }
-          return prev;
-        });
-      }
-    });
-
-    // Background fallback polling every 6s so every device stays synchronized
-    const syncInterval = setInterval(() => {
-      fetchCurriculumFromServer();
-    }, 6000);
-
-    // Sync on tab re-focus
-    const handleWindowFocus = () => {
-      fetchCurriculumFromServer();
-    };
-    window.addEventListener("focus", handleWindowFocus);
-
-    return () => {
-      unsubscribe();
-      clearInterval(syncInterval);
-      window.removeEventListener("focus", handleWindowFocus);
-    };
   }, []);
 
   // Persist State Changes to Server and Local Storage

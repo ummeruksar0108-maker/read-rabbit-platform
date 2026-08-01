@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { Course, Subject, Semester, Unit, StudyMaterial } from "../types";
-import { uploadFileToCloud } from "../lib/firebase";
 import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB } from "../lib/supabase";
 import { 
   ShieldCheck, 

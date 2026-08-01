@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
 import { getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
-import { uploadFileToCloud, getFileContentFromCloud, logDiagnostic } from "../lib/firebase";
+import { getFileContentFromCloud, logDiagnostic } from "../lib/firebase";
 import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB, fetchMaterialsFromSupabaseDB, UploadResult } from "../lib/supabase";
 import { 
   ChevronRight, 
