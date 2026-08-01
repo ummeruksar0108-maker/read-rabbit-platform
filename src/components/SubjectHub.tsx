@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
-import { saveFileToIndexedDB, getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
+import { getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
 import { uploadFileToCloud, getFileContentFromCloud, logDiagnostic } from "../lib/firebase";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage } from "../lib/supabase";
 import { 
   ChevronRight, 
   BookOpen, 
@@ -414,8 +415,13 @@ export default function SubjectHub({
     }
   };
 
-  const handleDeleteUnitMaterial = (unitId: string, materialId: string) => {
+  const handleDeleteUnitMaterial = async (unitId: string, materialId: string) => {
     if (!window.confirm("Are you sure you want to delete this file/note from this unit?")) return;
+    const targetUnit = subject.units.find(u => u.id === unitId);
+    const targetMat = targetUnit?.materials?.find(m => m.id === materialId);
+    if (targetMat?.cloudPath) {
+      await deleteFileFromSupabaseStorage(targetMat.cloudPath);
+    }
     const updatedUnits = subject.units.map(unit => {
       if (unit.id !== unitId) return unit;
       return {
@@ -429,8 +435,12 @@ export default function SubjectHub({
     });
   };
 
-  const handleDeleteSubjectMaterial = (materialId: string) => {
+  const handleDeleteSubjectMaterial = async (materialId: string) => {
     if (!window.confirm("Are you sure you want to delete this file/note from this subject?")) return;
+    const targetMat = subject.materials?.find(m => m.id === materialId);
+    if (targetMat?.cloudPath) {
+      await deleteFileFromSupabaseStorage(targetMat.cloudPath);
+    }
     onUpdateSubject({
       ...subject,
       materials: (subject.materials || []).filter(m => m.id !== materialId)
@@ -521,62 +531,46 @@ export default function SubjectHub({
     }
 
     console.log(`[UPLOAD FILE SELECTED] Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`);
+    setUploadSuccess(`⏳ Uploading "${file.name}" to Supabase Cloud Storage...`);
 
-    let sizeStr = "";
-    if (file.size >= 1024 * 1024) {
-      sizeStr = (file.size / (1024 * 1024)).toFixed(1) + " MB";
-    } else {
-      sizeStr = (file.size / 1024).toFixed(0) + " KB";
-    }
-
-    const name = file.name;
-    const ext = name.split(".").pop()?.toLowerCase() || "";
-    let type: StudyMaterial["type"] = "other";
-    if (ext === "pdf") {
-      type = "pdf";
-    } else if (["ppt", "pptx", "pps"].includes(ext)) {
-      type = "ppt";
-    } else if (["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"].includes(ext)) {
-      type = "image";
-    } else if (["doc", "docx", "xls", "xlsx", "txt", "md", "rtf", "odt"].includes(ext)) {
-      type = "doc";
-    } else if (["js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "cs", "html", "css", "json", "sql", "sh"].includes(ext)) {
-      type = "code";
-    }
-
-    setUploadSuccess(`⏳ Uploading "${name}" (${sizeStr}) to Firebase Cloud Storage...`);
-
-    let fileUrl = "";
-    let fileId = "mat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-
+    let cloudRes;
     try {
-      console.log(`[PDF UPLOAD TO CLOUD] Calling uploadFileToCloud...`);
-      const cloudResult = await uploadFileToCloud(
-        file, 
-        "study_materials",
+      cloudRes = await uploadFileToSupabaseStorage(
+        file,
+        {
+          courseId: courseName || "course",
+          semesterId: semesterName || "sem",
+          subjectId: subject.id,
+          unitId: targetUnitId || "subject_general"
+        },
         (_pct, statusMsg) => {
           setUploadSuccess(`⏳ ${statusMsg}`);
         }
       );
-      fileUrl = cloudResult.url;
-      if (cloudResult.size) sizeStr = cloudResult.size;
-      console.log("[PDF UPLOAD CLOUD SUCCESS] Permanent public URL:", fileUrl);
-      setUploadSuccess(`✓ Successfully uploaded "${name}" to Cloud Storage! Syncing across all devices...`);
+      console.log("[PDF UPLOAD CLOUD SUCCESS] Permanent public URL:", cloudRes.publicUrl);
+      setUploadSuccess(`✓ Successfully uploaded "${cloudRes.name}" to Supabase Cloud Storage! Syncing across all devices...`);
     } catch (uploadErr: any) {
-      console.error("[CLOUD UPLOAD ERROR] Failed uploading to Cloud Storage:", uploadErr);
+      console.error("[CLOUD UPLOAD ERROR] Failed uploading to Supabase Cloud Storage:", uploadErr);
       setUploadError(`Upload failed: ${uploadErr.message || "Could not upload file to cloud."}`);
       return;
     }
 
     const newMaterial: StudyMaterial = {
-      id: fileId,
-      name: name,
-      size: sizeStr,
+      id: cloudRes.id,
+      name: cloudRes.name,
+      size: cloudRes.size,
       addedTime: "Uploaded by Admin",
-      type: type,
+      type: cloudRes.type,
       isBookmarked: false,
       tag: targetUnitId ? "Unit File" : "Subject File",
-      details: fileUrl
+      details: cloudRes.publicUrl,
+      cloudPath: cloudRes.cloudPath,
+      publicUrl: cloudRes.publicUrl,
+      uploadedAt: cloudRes.uploadedAt,
+      courseId: cloudRes.courseId,
+      semesterId: cloudRes.semesterId,
+      subjectId: cloudRes.subjectId,
+      unitId: cloudRes.unitId
     };
 
     // Update State and sync curriculum
@@ -599,8 +593,8 @@ export default function SubjectHub({
     try {
       const saveRes = await onUpdateSubject(updatedSubjectObj);
       if (saveRes !== false) {
-        setLastUploadedMaterialName(name);
-        setUploadSuccess(`✅ "${name}" successfully uploaded and saved to Firestore 'courses/main'! Synced across all devices!`);
+        setLastUploadedMaterialName(cloudRes.name);
+        setUploadSuccess(`✅ "${cloudRes.name}" successfully uploaded to Supabase Storage and saved to Firestore! Synced across all devices!`);
         handleManualSaveToWeb(updatedSubjectObj);
       } else {
         throw new Error("Firestore save returned unsuccessful status.");

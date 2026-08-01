@@ -111,142 +111,43 @@ export function getDiagnosticsState(): FirebaseDiagnostics {
 }
 
 /**
- * Uploads a file to Firebase Storage or falls back to Firestore document storage.
- * Guarantees cross-device availability.
+ * Uploads a file directly to Supabase Storage bucket 'study-materials'.
+ * Replaces old Firebase storage/Firestore binary fallback completely.
  */
 export async function uploadFileToCloud(
   file: File,
   folderPath: string = "study_materials",
-  onProgress?: (percent: number, statusMsg: string) => void
-): Promise<{ url: string; name: string; size: string; type: string }> {
-  const formattedSize = file.size > 1024 * 1024 
-    ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
-    : `${Math.round(file.size / 1024)} KB`;
-
-  const extension = file.name.split('.').pop()?.toLowerCase() || '';
-  let fileType = 'doc';
-  if (extension === 'pdf') fileType = 'pdf';
-  else if (['ppt', 'pptx'].includes(extension)) fileType = 'ppt';
-  else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension)) fileType = 'image';
-  else if (['js', 'ts', 'py', 'java', 'cpp', 'c', 'html', 'css', 'json'].includes(extension)) fileType = 'code';
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `${folderPath}/${Date.now()}_${cleanFileName}`;
-  const fileId = "mat_file_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-
-  logDiagnostic("info", `Starting cloud upload for "${file.name}" (${formattedSize})...`);
-
-  // 1. Attempt upload to Firebase Storage with a 6-second timeout
+  onProgress?: (percent: number, statusMsg: string) => void,
+  contextParams?: { courseId?: string; semesterId?: string; subjectId?: string; unitId?: string }
+): Promise<{ url: string; name: string; size: string; type: string; cloudPath: string; publicUrl: string }> {
+  const { uploadFileToSupabaseStorage } = await import("./supabase");
+  
   try {
-    if (onProgress) onProgress(10, "Connecting to Firebase Storage...");
-    const storageRef = ref(storage, storagePath);
+    const res = await uploadFileToSupabaseStorage(file, contextParams, onProgress);
     
-    const downloadUrl = await new Promise<string>((resolve, reject) => {
-      let isSettled = false;
-      const timeoutId = setTimeout(() => {
-        if (!isSettled) {
-          isSettled = true;
-          reject(new Error("Firebase Storage upload timed out after 6 seconds"));
-        }
-      }, 6000);
-
-      const uploadTask = uploadBytesResumable(storageRef, file);
-
-      uploadTask.on(
-        "state_changed",
-        (snapshot) => {
-          if (isSettled) return;
-          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          if (onProgress) onProgress(Math.min(pct, 95), `Uploading to Firebase Storage (${pct}%)...`);
-        },
-        (err) => {
-          if (!isSettled) {
-            isSettled = true;
-            clearTimeout(timeoutId);
-            reject(err);
-          }
-        },
-        async () => {
-          if (!isSettled) {
-            isSettled = true;
-            clearTimeout(timeoutId);
-            try {
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve(url);
-            } catch (e) {
-              reject(e);
-            }
-          }
-        }
-      );
-    });
-
     updateDiagnostics({
       storageStatus: "SUCCESS",
-      storageUrl: downloadUrl,
+      storageUrl: res.publicUrl,
       storageError: null
     });
-    logDiagnostic("success", `[Firebase Storage] Uploaded "${file.name}" successfully! URL: ${downloadUrl}`);
-    if (onProgress) onProgress(100, "Storage upload complete!");
 
     return {
-      url: downloadUrl,
-      name: file.name,
-      size: formattedSize,
-      type: fileType
+      url: res.publicUrl,
+      name: res.name,
+      size: res.size,
+      type: res.type,
+      cloudPath: res.cloudPath,
+      publicUrl: res.publicUrl
     };
-  } catch (storageErr: any) {
-    const errMsg = storageErr?.message || String(storageErr);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
     updateDiagnostics({
       storageStatus: "FAILED",
       storageError: errMsg,
       storageUrl: null
     });
-    logDiagnostic("warn", `[Firebase Storage] Storage upload failed (${errMsg}). Saving to Firestore collection 'uploaded_files'...`);
-  }
-
-  // 2. Fallback: Save file document directly to Firestore collection 'uploaded_files'
-  try {
-    if (onProgress) onProgress(60, "Storing file binary into Firestore cloud database...");
-    logDiagnostic("info", `Converting "${file.name}" to base64 Data URL for Firestore collection 'uploaded_files'...`);
-    
-    const base64Url = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error("Failed to read file contents"));
-      reader.readAsDataURL(file);
-    });
-
-    const fileDocRef = doc(db, "uploaded_files", fileId);
-    const filePayload = {
-      id: fileId,
-      name: file.name,
-      size: formattedSize,
-      type: fileType,
-      dataUrl: base64Url,
-      uploadedAt: new Date().toISOString()
-    };
-
-    await setDoc(fileDocRef, filePayload);
-
-    const cloudFileRefUrl = `firestore_file://${fileId}`;
-    updateDiagnostics({
-      storageStatus: "FIRESTORE_DOC",
-      storageUrl: cloudFileRefUrl
-    });
-    logDiagnostic("success", `[Firestore Cloud] Uploaded file document to 'uploaded_files/${fileId}'!`);
-    if (onProgress) onProgress(100, "Firestore file upload complete!");
-
-    return {
-      url: cloudFileRefUrl,
-      name: file.name,
-      size: formattedSize,
-      type: fileType
-    };
-  } catch (firestoreFileErr: any) {
-    const errMsg = firestoreFileErr?.message || String(firestoreFileErr);
-    logDiagnostic("error", `[Cloud Upload CRITICAL FAIL] Failed saving file to cloud: ${errMsg}`);
-    throw new Error(`Upload to Cloud failed: ${errMsg}`);
+    logDiagnostic("error", `[Cloud Upload FAIL] Supabase Storage upload failed: ${errMsg}`);
+    throw new Error(`Cloud Storage upload failed: ${errMsg}`);
   }
 }
 

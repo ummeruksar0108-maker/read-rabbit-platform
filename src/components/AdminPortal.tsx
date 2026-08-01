@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Course, Subject, Semester, Unit, StudyMaterial } from "../types";
-import { saveFileToIndexedDB } from "../lib/fileStorage";
 import { uploadFileToCloud } from "../lib/firebase";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage } from "../lib/supabase";
 import { 
   ShieldCheck, 
   Lock, 
@@ -528,7 +528,7 @@ export default function AdminPortal({
     }
   };
 
-  // Process drag/drop or selected file in AdminPortal with Cloud Storage upload
+  // Process drag/drop or selected file in AdminPortal with Supabase Cloud Storage upload
   const handleProcessPortalFile = async (file: File, unitId: string) => {
     if (!file) {
       console.error("[ADMIN UPLOAD STEP 1 ERROR] No file provided");
@@ -537,52 +537,42 @@ export default function AdminPortal({
 
     console.log(`[ADMIN UPLOAD STEP 1: File Selected] Name: ${file.name}, Size: ${file.size} bytes`);
 
-    let sizeStr = "";
-    if (file.size >= 1024 * 1024) {
-      sizeStr = (file.size / (1024 * 1024)).toFixed(1) + " MB";
-    } else {
-      sizeStr = (file.size / 1024).toFixed(0) + " KB";
-    }
-
-    const name = file.name;
-    const ext = name.split(".").pop()?.toLowerCase() || "";
-    let type: "pdf" | "code" | "question" = "pdf";
-    if (["js", "ts", "jsx", "tsx", "py", "java", "cpp", "c", "html", "css", "json", "sh", "txt"].includes(ext)) {
-      type = "code";
-    }
-
-    let fileUrl = "";
-    let fileId = "mat_unit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-
+    let cloudRes;
     try {
-      console.log(`[ADMIN UPLOAD TO CLOUD] Calling uploadFileToCloud...`);
-      const cloudResult = await uploadFileToCloud(file, "study_materials");
-      fileUrl = cloudResult.url;
-      if (cloudResult.size) sizeStr = cloudResult.size;
-      console.log("[ADMIN UPLOAD CLOUD SUCCESS] Permanent public URL:", fileUrl);
+      console.log(`[ADMIN UPLOAD TO SUPABASE] Calling uploadFileToSupabaseStorage...`);
+      cloudRes = await uploadFileToSupabaseStorage(
+        file,
+        {
+          courseId: selectedCourseId,
+          semesterId: String(selectedSemesterId),
+          subjectId: editingSubject?.id || "subject",
+          unitId: unitId
+        }
+      );
+      console.log("[ADMIN UPLOAD SUPABASE SUCCESS] Permanent public URL:", cloudRes.publicUrl);
     } catch (uploadErr: any) {
-      console.error("[ADMIN CLOUD UPLOAD ERROR] Failed uploading to Cloud Storage:", uploadErr);
+      console.error("[ADMIN CLOUD UPLOAD ERROR] Failed uploading to Supabase Storage:", uploadErr);
       alert(`Upload error: ${uploadErr.message || "Failed to upload file to cloud."}`);
       return;
     }
 
-    // Save binary file stream into browser IndexedDB for local offline backup
-    try {
-      await saveFileToIndexedDB(fileId, file);
-    } catch (e) {
-      console.warn("IndexedDB local backup skipped:", e);
-    }
-
     try {
       const newMaterial: StudyMaterial = {
-        id: fileId,
-        name: name,
-        size: sizeStr,
+        id: cloudRes.id,
+        name: cloudRes.name,
+        size: cloudRes.size,
         addedTime: "Uploaded by Admin",
-        type: type,
+        type: cloudRes.type,
         isBookmarked: false,
         tag: "Unit File",
-        details: fileUrl
+        details: cloudRes.publicUrl,
+        cloudPath: cloudRes.cloudPath,
+        publicUrl: cloudRes.publicUrl,
+        uploadedAt: cloudRes.uploadedAt,
+        courseId: cloudRes.courseId,
+        semesterId: cloudRes.semesterId,
+        subjectId: cloudRes.subjectId,
+        unitId: cloudRes.unitId
       };
 
       const updatedFormUnits = formUnits.map(unit => {
@@ -625,7 +615,7 @@ export default function AdminPortal({
         handleSaveCurriculumToCloud();
       }
 
-      alert(`"${name}" successfully uploaded and saved to web cloud! 🥕`);
+      alert(`"${cloudRes.name}" successfully uploaded and saved to Supabase Cloud Storage! 🥕`);
     } catch (err: any) {
       console.error("[ADMIN UPLOAD FATAL ERROR]", err);
       alert(`Upload failed: ${err.message || "Could not save file"}`);
@@ -701,8 +691,14 @@ export default function AdminPortal({
   };
 
   // Delete PDF study material from inside a unit
-  const handleDeletePdfFromUnit = (unitId: string, materialId: string) => {
+  const handleDeletePdfFromUnit = async (unitId: string, materialId: string) => {
     if (!window.confirm("Are you sure you want to delete this PDF file from this unit?")) return;
+
+    const targetUnit = formUnits.find(u => u.id === unitId);
+    const targetMat = targetUnit?.materials?.find(m => m.id === materialId);
+    if (targetMat?.cloudPath) {
+      await deleteFileFromSupabaseStorage(targetMat.cloudPath);
+    }
 
     const updatedFormUnits = formUnits.map(unit => {
       if (unit.id !== unitId) return unit;

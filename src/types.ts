@@ -36,6 +36,13 @@ export interface StudyMaterial {
   isBookmarked: boolean;
   tag?: string;
   details?: string;
+  cloudPath?: string;
+  publicUrl?: string;
+  uploadedAt?: string;
+  courseId?: string;
+  semesterId?: string;
+  subjectId?: string;
+  unitId?: string;
 }
 
 export interface Subject {
