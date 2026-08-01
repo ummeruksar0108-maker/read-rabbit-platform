@@ -38,39 +38,79 @@ export async function insertMaterialToSupabaseDB(material: UploadResult): Promis
   const isInvalidKey = !supabaseAnonKey || supabaseAnonKey.includes("placeholder") || supabaseAnonKey.includes("your-anon-key");
 
   if (isInvalidUrl || isInvalidKey) {
-    throw new Error(
-      "Supabase credentials missing or invalid! Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment."
-    );
+    const msg = "Supabase credentials missing or invalid! Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment.";
+    console.error("[Supabase DB Error]", msg);
+    throw new Error(msg);
   }
 
-  logDiagnostic("info", `[Supabase DB] Inserting metadata for "${material.name}" into 'study_materials' table (courseId: ${material.courseId}, semesterId: ${material.semesterId}, subjectId: ${material.subjectId}, unitId: ${material.unitId})...`);
+  const insertPayload: any = {
+    id: material.id,
+    name: material.name,
+    type: material.type,
+    size: material.size,
+    public_url: material.publicUrl,
+    cloud_path: material.cloudPath,
+    course_id: material.courseId,
+    semester_id: material.semesterId,
+    subject_id: material.subjectId,
+    unit_id: material.unitId,
+    uploaded_at: material.uploadedAt
+  };
 
-  const { data, error } = await supabase
+  console.log("[Supabase DB Insert Executing] Inserting record into 'study_materials':", insertPayload);
+  logDiagnostic("info", `[Supabase DB] Executing insert for "${material.name}" into table 'study_materials'...`);
+
+  let { data, error } = await supabase
     .from("study_materials")
-    .insert([
-      {
-        id: material.id,
-        name: material.name,
-        type: material.type,
-        size: material.size,
-        public_url: material.publicUrl,
-        cloud_path: material.cloudPath,
-        course_id: material.courseId,
-        semester_id: material.semesterId,
-        subject_id: material.subjectId,
-        unit_id: material.unitId,
-        uploaded_at: material.uploadedAt
-      }
-    ])
+    .insert([insertPayload])
     .select();
 
+  console.log("[Supabase DB Insert Raw Result]", { data, error });
+
+  // Retry 1: If 'id' is defined as UUID or auto-increment INTEGER in Postgres, retry without passing explicit text 'id'
+  if (error && (error.code === "22P02" || error.message.includes("uuid") || error.message.includes("integer"))) {
+    console.warn("[Supabase DB Retry] Column 'id' mismatch detected. Retrying insert without explicit 'id' field...");
+    const { id, ...payloadWithoutId } = insertPayload;
+    const retryRes = await supabase
+      .from("study_materials")
+      .insert([payloadWithoutId])
+      .select();
+    data = retryRes.data;
+    error = retryRes.error;
+    console.log("[Supabase DB Insert Retry Result]", { data, error });
+  }
+
+  // Retry 2: If RLS policy allows INSERT but restricts SELECT, retry insert without chaining .select()
+  if (error && (error.code === "42501" || error.message.includes("row-level security") || error.message.includes("policy"))) {
+    console.warn("[Supabase DB Retry] RLS restriction on .select() detected. Retrying insert without .select()...");
+    const retryNoSelect = await supabase
+      .from("study_materials")
+      .insert([insertPayload]);
+    if (!retryNoSelect.error) {
+      error = null;
+      console.log("[Supabase DB Insert Retry Without Select Successful]");
+    } else {
+      error = retryResNoSelectError(retryNoSelect.error, insertPayload);
+    }
+  }
+
   if (error) {
-    logDiagnostic("error", `[Supabase DB Insert Error] ${error.message}`);
-    throw new Error(`Supabase Database Insert Failed: ${error.message}`);
+    const errorDetails = error.details ? ` | Details: ${error.details}` : "";
+    const errorHint = error.hint ? ` | Hint: ${error.hint}` : "";
+    const errorCode = error.code ? ` [Code: ${error.code}]` : "";
+    const fullErrMsg = `Supabase DB Insert Error: ${error.message}${errorDetails}${errorHint}${errorCode}`;
+    
+    console.error("[EXACT SUPABASE ERROR]", fullErrMsg, error);
+    logDiagnostic("error", fullErrMsg);
+    throw new Error(fullErrMsg);
   }
 
   logDiagnostic("success", `[Supabase DB Insert Success] Metadata for "${material.name}" saved to PostgreSQL study_materials table!`);
   return material;
+}
+
+function retryResNoSelectError(err: any, payload: any) {
+  return err;
 }
 
 /**
