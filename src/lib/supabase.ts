@@ -39,8 +39,14 @@ export async function uploadFileToSupabaseStorage(
   contextParams: UploadMetadataParams = {},
   onProgress?: (percent: number, statusMsg: string) => void
 ): Promise<UploadResult> {
-  if (!supabaseUrl || supabaseUrl.includes("placeholder") || !supabaseAnonKey || supabaseAnonKey.includes("placeholder")) {
-    throw new Error("Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment/Netlify settings.");
+  const isInvalidUrl = !supabaseUrl || supabaseUrl.includes("placeholder") || supabaseUrl.includes("your-project");
+  const isInvalidKey = !supabaseAnonKey || supabaseAnonKey.includes("placeholder") || supabaseAnonKey.includes("your-anon-key");
+
+  if (isInvalidUrl || isInvalidKey) {
+    throw new Error(
+      "Supabase credentials are missing or set to placeholders! " +
+      "Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment / Netlify environment variables."
+    );
   }
 
   const formattedSize = file.size >= 1024 * 1024 
@@ -65,7 +71,7 @@ export async function uploadFileToSupabaseStorage(
   const fileId = "mat_sb_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
 
   logDiagnostic("info", `[Supabase Storage] Uploading "${file.name}" (${formattedSize}) to bucket 'study-materials' at '${cloudPath}'...`);
-  if (onProgress) onProgress(15, `Uploading to Supabase Storage bucket 'study-materials'...`);
+  if (onProgress) onProgress(20, `Uploading file to Supabase Storage bucket 'study-materials'...`);
 
   const { error } = await supabase.storage
     .from('study-materials')
@@ -76,10 +82,17 @@ export async function uploadFileToSupabaseStorage(
 
   if (error) {
     logDiagnostic("error", `[Supabase Upload Failed] ${error.message}`);
+    const msg = error.message.toLowerCase();
+    if (msg.includes("bucket not found")) {
+      throw new Error("Supabase Storage bucket 'study-materials' does not exist! Go to Supabase Dashboard -> Storage -> Create a public bucket named 'study-materials'.");
+    }
+    if (msg.includes("row-level security") || msg.includes("policy") || msg.includes("unauthorized") || msg.includes("permission denied")) {
+      throw new Error("Supabase RLS policy issue: Make sure bucket 'study-materials' is set to Public or has INSERT/SELECT policies enabled for anon users.");
+    }
     throw new Error(`Supabase Storage Upload Failed: ${error.message}`);
   }
 
-  if (onProgress) onProgress(80, `File uploaded to Supabase. Retrieving public URL...`);
+  if (onProgress) onProgress(85, `Uploaded! Generating public URL...`);
 
   const { data: publicUrlData } = supabase.storage
     .from('study-materials')

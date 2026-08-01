@@ -139,7 +139,7 @@ export default function SubjectHub({
     setIsLoadingMaterial(true);
 
     async function resolveMaterialUrl() {
-      let details = activeMaterial?.details || "";
+      let details = activeMaterial?.publicUrl || activeMaterial?.details || "";
 
       try {
         if (details.startsWith("firestore_file://")) {
@@ -150,7 +150,9 @@ export default function SubjectHub({
           }
         }
 
-        if (details.startsWith("/api/files/") || details.startsWith("http://") || details.startsWith("https://")) {
+        if (details.startsWith("http://") || details.startsWith("https://")) {
+          if (isMounted) setActiveBlobUrl(details);
+        } else if (details.startsWith("/api/files/")) {
           if (isMounted) setActiveBlobUrl(details);
         } else if (details.startsWith("indexeddb://")) {
           const fileId = details.replace("indexeddb://", "");
@@ -1851,24 +1853,25 @@ export default function SubjectHub({
                 </div>
               ) : (activeMaterial.type === "pdf" || activeMaterial.name.toLowerCase().endsWith(".pdf")) ? (
                 <div className="w-full h-full flex flex-col bg-slate-900 relative">
-                  {/* Notice Bar for Mobile & Full Screen Option */}
+                  {/* Notice Bar with Quick Controls */}
                   <div className="bg-amber-500/15 border-b border-amber-500/20 px-4 py-2 text-amber-200 text-xs font-medium flex flex-wrap items-center justify-between gap-2 shrink-0">
-                    <span className="flex items-center gap-1.5">
+                    <span className="flex items-center gap-1.5 min-w-0">
                       <Sparkles size={14} className="text-amber-300 shrink-0" />
-                      <span>Mobile Phone Friendly: Tap below to open or download directly on phone.</span>
+                      <span className="truncate">📄 {activeMaterial.name} ({activeMaterial.size || "PDF"})</span>
                     </span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <a 
-                        href={activeBlobUrl || activeMaterial.details}
+                        href={activeBlobUrl || activeMaterial.publicUrl || activeMaterial.details || "#"}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded-lg text-xs transition-all cursor-pointer flex items-center gap-1"
+                        className="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded-lg text-xs transition-all cursor-pointer flex items-center gap-1 shadow-xs"
                       >
-                        <span>📱 Open PDF in Phone Reader ↗</span>
+                        <Maximize2 size={12} />
+                        <span>Open Full Tab ↗</span>
                       </a>
                       <button
                         onClick={() => handleDownloadFile(activeMaterial)}
-                        className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold rounded-lg text-xs transition-all cursor-pointer flex items-center gap-1 border border-slate-700"
+                        className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold rounded-lg text-xs transition-all cursor-pointer flex items-center gap-1 border border-slate-700 shadow-xs"
                       >
                         <Download size={12} />
                         <span>Download</span>
@@ -1876,58 +1879,14 @@ export default function SubjectHub({
                     </div>
                   </div>
 
-                  {/* Desktop Embedded View & Mobile Phone Companion View */}
+                  {/* Embedded PDF Canvas for Desktop & Mobile */}
                   {activeBlobUrl || (activeMaterial.details && !activeMaterial.details.startsWith("indexeddb://")) ? (
-                    <div className="w-full h-full relative bg-slate-900 flex flex-col items-center justify-center overflow-hidden">
-                      {/* Desktop Browser Native PDF Canvas */}
-                      <object
-                        data={activeBlobUrl || activeMaterial.details}
-                        type="application/pdf"
-                        className="w-full h-full border-0 bg-slate-800 hidden md:block"
-                      >
-                        <embed
-                          src={activeBlobUrl || activeMaterial.details}
-                          type="application/pdf"
-                          className="w-full h-full border-0"
-                        />
-                        <iframe
-                          src={activeBlobUrl || activeMaterial.details}
-                          className="w-full h-full border-0 bg-slate-800"
-                          title={activeMaterial.name}
-                        />
-                      </object>
-
-                      {/* Mobile Phone Card View for iOS Safari / Android Chrome */}
-                      <div className="md:hidden flex flex-col items-center justify-center p-6 text-center text-white space-y-4 max-w-sm mx-auto my-auto bg-slate-800/90 rounded-2xl border border-slate-700 shadow-2xl">
-                        <div className="w-14 h-14 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center shadow-inner">
-                          <FileText size={32} />
-                        </div>
-                        <div className="space-y-1">
-                          <h4 className="font-extrabold text-sm sm:text-base text-amber-300 truncate max-w-xs">{activeMaterial.name}</h4>
-                          <p className="text-xs text-slate-300 leading-relaxed">
-                            To view PDF pages & zoom on mobile, tap the button below to launch your phone's native viewer.
-                          </p>
-                        </div>
-                        <div className="flex flex-col gap-2.5 w-full pt-2">
-                          <a
-                            href={activeBlobUrl || activeMaterial.details}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95"
-                          >
-                            <Eye size={16} />
-                            <span>📱 Tap to Open PDF on Phone ↗</span>
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadFile(activeMaterial)}
-                            className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-amber-300 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-700 active:scale-95"
-                          >
-                            <Download size={16} />
-                            <span>Download to Mobile Device</span>
-                          </button>
-                        </div>
-                      </div>
+                    <div className="w-full h-full relative bg-slate-900 flex-1 flex flex-col overflow-hidden">
+                      <iframe
+                        src={activeBlobUrl || activeMaterial.publicUrl || activeMaterial.details}
+                        className="w-full h-full border-0 bg-slate-900 min-h-[450px]"
+                        title={activeMaterial.name}
+                      />
                     </div>
                   ) : (
                     <div className="p-8 text-center text-white/80 space-y-4 my-auto">
