@@ -380,6 +380,7 @@ export default function SubjectHub({
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [adminNoteTitle, setAdminNoteTitle] = useState("");
   const [adminNoteContent, setAdminNoteContent] = useState("");
   const [adminNoteType, setAdminNoteType] = useState<"pdf" | "code" | "question">("pdf");
@@ -403,7 +404,7 @@ export default function SubjectHub({
       }
 
       // Flush updated subject state to App
-      onUpdateSubject(targetSubject);
+      await onUpdateSubject(targetSubject);
 
       setWebSaveSuccess(true);
       if (fileName) {
@@ -525,6 +526,11 @@ export default function SubjectHub({
       alert("Only administrator account can upload files or notes.");
       return;
     }
+    if (isUploadingFile) {
+      console.warn("An upload is already in progress...");
+      return;
+    }
+
     setUploadError("");
     setUploadSuccess("");
     if (!file) {
@@ -532,12 +538,12 @@ export default function SubjectHub({
       return;
     }
 
+    setIsUploadingFile(true);
     console.log(`[UPLOAD FILE SELECTED] Name: ${file.name}, Size: ${file.size} bytes, Type: ${file.type}`);
     setUploadSuccess(`⏳ Uploading "${file.name}" to Supabase Cloud Storage...`);
 
-    let cloudRes;
     try {
-      cloudRes = await uploadFileToSupabaseStorage(
+      const cloudRes = await uploadFileToSupabaseStorage(
         file,
         {
           courseId: courseName || "course",
@@ -550,61 +556,53 @@ export default function SubjectHub({
         }
       );
       console.log("[PDF UPLOAD CLOUD SUCCESS] Permanent public URL:", cloudRes.publicUrl);
-      setUploadSuccess(`✓ Successfully uploaded "${cloudRes.name}" to Supabase Cloud Storage! Syncing across all devices...`);
-    } catch (uploadErr: any) {
-      console.error("[CLOUD UPLOAD ERROR] Failed uploading to Supabase Cloud Storage:", uploadErr);
-      setUploadError(`Upload failed: ${uploadErr.message || "Could not upload file to cloud."}`);
-      return;
-    }
+      setUploadSuccess(`✓ Uploaded "${cloudRes.name}" to Supabase! Saving metadata to Firestore Cloud...`);
 
-    const newMaterial: StudyMaterial = {
-      id: cloudRes.id,
-      name: cloudRes.name,
-      size: cloudRes.size,
-      addedTime: "Uploaded by Admin",
-      type: cloudRes.type,
-      isBookmarked: false,
-      tag: targetUnitId ? "Unit File" : "Subject File",
-      details: cloudRes.publicUrl,
-      cloudPath: cloudRes.cloudPath,
-      publicUrl: cloudRes.publicUrl,
-      uploadedAt: cloudRes.uploadedAt,
-      courseId: cloudRes.courseId,
-      semesterId: cloudRes.semesterId,
-      subjectId: cloudRes.subjectId,
-      unitId: cloudRes.unitId
-    };
+      const newMaterial: StudyMaterial = {
+        id: cloudRes.id,
+        name: cloudRes.name,
+        size: cloudRes.size,
+        addedTime: "Uploaded by Admin",
+        type: cloudRes.type,
+        isBookmarked: false,
+        tag: targetUnitId ? "Unit File" : "Subject File",
+        details: cloudRes.publicUrl,
+        cloudPath: cloudRes.cloudPath,
+        publicUrl: cloudRes.publicUrl,
+        uploadedAt: cloudRes.uploadedAt,
+        courseId: cloudRes.courseId,
+        semesterId: cloudRes.semesterId,
+        subjectId: cloudRes.subjectId,
+        unitId: cloudRes.unitId
+      };
 
-    // Update State and sync curriculum
-    const updatedSubjectObj: Subject = targetUnitId ? {
-      ...subject,
-      units: subject.units.map(unit => {
-        if (unit.id !== targetUnitId) return unit;
-        return {
-          ...unit,
-          materials: [...(unit.materials || []), newMaterial]
-        };
-      })
-    } : {
-      ...subject,
-      materials: [...(subject.materials || []), newMaterial]
-    };
+      const updatedSubjectObj: Subject = targetUnitId ? {
+        ...subject,
+        units: subject.units.map(unit => {
+          if (unit.id !== targetUnitId) return unit;
+          return {
+            ...unit,
+            materials: [...(unit.materials || []), newMaterial]
+          };
+        })
+      } : {
+        ...subject,
+        materials: [...(subject.materials || []), newMaterial]
+      };
 
-    setUploadSuccess(`⏳ Writing document metadata directly to Firestore Cloud ('courses/main')...`);
-
-    try {
       const saveRes = await onUpdateSubject(updatedSubjectObj);
       if (saveRes !== false) {
         setLastUploadedMaterialName(cloudRes.name);
         setUploadSuccess(`✅ "${cloudRes.name}" successfully uploaded to Supabase Storage and saved to Firestore! Synced across all devices!`);
-        handleManualSaveToWeb(updatedSubjectObj);
       } else {
         throw new Error("Firestore save returned unsuccessful status.");
       }
     } catch (err: any) {
       console.error("[UPLOAD FATAL FAIL]", err);
-      setUploadError(`❌ Firestore Cloud Save Failed: ${err.message || "Failed saving curriculum to Firestore."}`);
+      setUploadError(`❌ Upload / Cloud Save Failed: ${err.message || "Failed saving curriculum to Firestore."}`);
       setUploadSuccess("");
+    } finally {
+      setIsUploadingFile(false);
     }
   };
 

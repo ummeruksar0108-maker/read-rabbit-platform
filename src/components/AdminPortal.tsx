@@ -605,14 +605,14 @@ export default function AdminPortal({
             })
           };
         });
-        onUpdateCourses(updatedCourses);
-        handleSaveCurriculumToCloud(updatedCourses);
+        await onUpdateCourses(updatedCourses);
+        await handleSaveCurriculumToCloud(updatedCourses);
         setEditingSubject({
           ...editingSubject,
           units: updatedFormUnits
         });
       } else {
-        handleSaveCurriculumToCloud();
+        await handleSaveCurriculumToCloud();
       }
 
       alert(`"${cloudRes.name}" successfully uploaded and saved to Supabase Cloud Storage! 🥕`);

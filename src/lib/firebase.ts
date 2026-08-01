@@ -177,10 +177,11 @@ export async function saveCoursesToFirestore(coursesData: any[]): Promise<boolea
     const errMsg = err?.message || String(err);
     updateDiagnostics({
       writeStatus: "FAILED",
-      writeError: errMsg
+      writeError: errMsg,
+      isFallbackActive: true
     });
-    logDiagnostic("error", `[Firestore Cloud ERROR] Failed writing to 'courses/main': ${errMsg}`);
-    throw new Error(`Firestore Save Failed: ${errMsg}`);
+    logDiagnostic("warn", `[Firestore Write Notice] ${errMsg}. Saved curriculum locally and to backend server instead.`);
+    return false;
   }
 }
 

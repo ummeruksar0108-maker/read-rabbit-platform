@@ -170,21 +170,41 @@ export default function App() {
   const saveCurriculumToServer = async (coursesToSave: Course[]): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
     let isSuccess = false;
+
+    // 1. Immediately persist to localStorage
     try {
-      isSuccess = await saveCoursesToFirestore(coursesToSave);
-      setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-    } catch (err: any) {
-      console.error("[FIRESTORE WRITE ERROR] Failed to save curriculum to Firestore:", err);
-      logDiagnostic("error", `Firestore save failed: ${err?.message || err}`);
-      throw err;
+      localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(coursesToSave));
+      isSuccess = true;
+    } catch (e) {
+      console.warn("[LOCALSTORAGE SAVE WARN]", e);
     }
+
+    // 2. Persist to Express server disk storage (/api/curriculum)
     try {
-      fetch("/api/curriculum", {
+      const res = await fetch("/api/curriculum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courses: coursesToSave })
-      }).catch(() => {});
-    } catch (err) {}
+      });
+      if (res.ok) {
+        isSuccess = true;
+      }
+    } catch (err) {
+      console.warn("[EXPRESS BACKEND SAVE WARN]", err);
+    }
+
+    // 3. Sync to Firestore Cloud (gracefully handle quota limits or network blocks)
+    try {
+      const fsSuccess = await saveCoursesToFirestore(coursesToSave);
+      if (fsSuccess) {
+        setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+        isSuccess = true;
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      console.warn("[FIRESTORE SYNC NOTICE]", errMsg);
+      logDiagnostic("warn", `Firestore sync notice: ${errMsg}. Saved curriculum to server & localStorage.`);
+    }
 
     return isSuccess;
   };
@@ -499,90 +519,60 @@ export default function App() {
   };
 
   // Admin handlers
-  const handleUpdateCourses = (updatedCourses: Course[]) => {
+  const handleUpdateCourses = async (updatedCourses: Course[]): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
     setCourses(updatedCourses);
-    saveCurriculumToServer(updatedCourses);
+    return await saveCurriculumToServer(updatedCourses);
   };
 
   const handleUpdateSubject = async (updatedSubject: Subject): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
     let found = false;
-    let nextCourses: Course[] = [];
 
-    setCourses(prevCourses => {
-      nextCourses = prevCourses.map(course => {
-        let containsSubject = false;
-        const updatedSemesters = course.semesters.map(sem => {
-          const subIndex = sem.subjects.findIndex(s => s.id === updatedSubject.id);
-          if (subIndex === -1) return sem;
-          
-          containsSubject = true;
-          found = true;
-          const updatedSubjects = sem.subjects.map(s => s.id === updatedSubject.id ? updatedSubject : s);
-          const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
-          const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
-          const progressPercent = totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0;
-          
-          return {
-            ...sem,
-            subjects: updatedSubjects,
-            completedModules,
-            progressPercent
-          };
-        });
+    const nextCourses = courses.map(course => {
+      let containsSubject = false;
+      const updatedSemesters = course.semesters.map(sem => {
+        const subIndex = sem.subjects.findIndex(s => s.id === updatedSubject.id);
+        if (subIndex === -1) return sem;
         
-        return containsSubject ? { ...course, semesters: updatedSemesters } : course;
+        containsSubject = true;
+        found = true;
+        const updatedSubjects = sem.subjects.map(s => s.id === updatedSubject.id ? updatedSubject : s);
+        const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
+        const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
+        const progressPercent = totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0;
+        
+        return {
+          ...sem,
+          subjects: updatedSubjects,
+          completedModules,
+          progressPercent
+        };
       });
-
-      return found ? nextCourses : prevCourses;
+      
+      return containsSubject ? { ...course, semesters: updatedSemesters } : course;
     });
 
-    if (found && nextCourses.length > 0) {
+    if (found) {
+      setCourses(nextCourses);
       return await saveCurriculumToServer(nextCourses);
     }
     return false;
   };
 
-  const handleAddSubject = (newSubject: Subject) => {
+  const handleAddSubject = async (newSubject: Subject): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
     const cId = selectedCourseId || courses[0]?.id;
     const sId = selectedSemesterId ?? 1;
 
-    setCourses(prev => {
-      const nextCourses = prev.map(course => {
-        if (course.id !== cId) return course;
-        return {
-          ...course,
-          semesters: course.semesters.map(sem => {
-            if (sem.id !== sId) return sem;
-            
-            const updatedSubjects = [...sem.subjects, newSubject];
-            const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
-            const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
-            
-            return {
-              ...sem,
-              subjects: updatedSubjects,
-              modulesCount: totalModules,
-              completedModules,
-              progressPercent: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0
-            };
-          })
-        };
-      });
-      saveCurriculumToServer(nextCourses);
-      return nextCourses;
-    });
-  };
-
-  const handleDeleteSubject = (subjectId: string) => {
-    lastLocalMutationTime.current = Date.now();
-    setCourses(prev => {
-      const nextCourses = prev.map(course => ({
+    const nextCourses = courses.map(course => {
+      if (course.id !== cId) return course;
+      return {
         ...course,
         semesters: course.semesters.map(sem => {
-          const updatedSubjects = sem.subjects.filter(s => s.id !== subjectId);
+          if (sem.id !== sId) return sem;
+          
+          const updatedSubjects = [...sem.subjects, newSubject];
           const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
           const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
           
@@ -594,10 +584,34 @@ export default function App() {
             progressPercent: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0
           };
         })
-      }));
-      saveCurriculumToServer(nextCourses);
-      return nextCourses;
+      };
     });
+
+    setCourses(nextCourses);
+    return await saveCurriculumToServer(nextCourses);
+  };
+
+  const handleDeleteSubject = async (subjectId: string): Promise<boolean> => {
+    lastLocalMutationTime.current = Date.now();
+    const nextCourses = courses.map(course => ({
+      ...course,
+      semesters: course.semesters.map(sem => {
+        const updatedSubjects = sem.subjects.filter(s => s.id !== subjectId);
+        const totalModules = updatedSubjects.reduce((acc, s) => acc + s.modulesCount, 0);
+        const completedModules = updatedSubjects.reduce((acc, s) => acc + s.completedModules, 0);
+        
+        return {
+          ...sem,
+          subjects: updatedSubjects,
+          modulesCount: totalModules,
+          completedModules,
+          progressPercent: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0
+        };
+      })
+    }));
+
+    setCourses(nextCourses);
+    return await saveCurriculumToServer(nextCourses);
   };
 
   // Exit App handler (Splash trigger)

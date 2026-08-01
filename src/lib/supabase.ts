@@ -62,12 +62,12 @@ export async function uploadFileToSupabaseStorage(
   else if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'html', 'css', 'json', 'sh', 'sql'].includes(ext)) fileType = 'code';
 
   const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const courseId = contextParams.courseId || "course";
-  const semesterId = contextParams.semesterId || "sem";
-  const subjectId = contextParams.subjectId || "subj";
-  const unitId = contextParams.unitId || "unit";
+  const courseId = (contextParams.courseId || "course").replace(/[^a-zA-Z0-9._-]/g, '_');
+  const semesterId = (contextParams.semesterId || "sem").replace(/[^a-zA-Z0-9._-]/g, '_');
+  const subjectId = (contextParams.subjectId || "subj").replace(/[^a-zA-Z0-9._-]/g, '_');
+  const unitId = (contextParams.unitId || "unit").replace(/[^a-zA-Z0-9._-]/g, '_');
   
-  const cloudPath = `${courseId}/${semesterId}/${subjectId}/${unitId}/${Date.now()}_${cleanFileName}`;
+  const cloudPath = `${courseId}/${semesterId}/${subjectId}/${unitId}/${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${cleanFileName}`;
   const fileId = "mat_sb_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
 
   logDiagnostic("info", `[Supabase Storage] Uploading "${file.name}" (${formattedSize}) to bucket 'study-materials' at '${cloudPath}'...`);
