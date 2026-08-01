@@ -552,7 +552,13 @@ export default function AdminPortal({
       console.log("[ADMIN UPLOAD SUPABASE SUCCESS] Permanent public URL:", cloudRes.publicUrl);
 
       // Save metadata to Supabase PostgreSQL table 'study_materials'
-      await insertMaterialToSupabaseDB(cloudRes);
+      try {
+        await insertMaterialToSupabaseDB(cloudRes);
+        console.log(`[SUPABASE DB INSERT SUCCESS] Record for "${cloudRes.name}" successfully inserted into study_materials table.`);
+      } catch (dbErr: any) {
+        console.error(`[SUPABASE DB INSERT FAILED] Failed to insert metadata for "${cloudRes.name}" into study_materials:`, dbErr);
+        throw dbErr;
+      }
     } catch (uploadErr: any) {
       console.error("[ADMIN CLOUD UPLOAD ERROR] Failed uploading to Supabase Storage or Database:", uploadErr);
       if (cloudRes?.cloudPath) {

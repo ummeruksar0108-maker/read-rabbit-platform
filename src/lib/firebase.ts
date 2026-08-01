@@ -165,7 +165,23 @@ export async function saveCoursesToFirestore(coursesData: any[]): Promise<boolea
   logDiagnostic("info", `Writing curriculum payload (${coursesData.length} courses) to Firestore 'courses/main'...`);
   try {
     const courseDocRef = doc(db, "courses", "main");
-    const cleanCoursesData = JSON.parse(JSON.stringify(coursesData));
+    // Strip study material metadata so materials are stored ONLY in Supabase PostgreSQL study_materials table
+    const cleanCoursesData = coursesData.map((course: any) => ({
+      ...course,
+      semesters: (course.semesters || []).map((sem: any) => ({
+        ...sem,
+        subjects: (sem.subjects || []).map((sub: any) => {
+          const { materials, ...subWithoutMaterials } = sub;
+          return {
+            ...subWithoutMaterials,
+            units: (sub.units || []).map((unit: any) => {
+              const { materials: unitMaterials, ...unitWithoutMaterials } = unit;
+              return unitWithoutMaterials;
+            })
+          };
+        })
+      }))
+    }));
     const payload = {
       coursesData: cleanCoursesData,
       updatedAt: new Date().toISOString()

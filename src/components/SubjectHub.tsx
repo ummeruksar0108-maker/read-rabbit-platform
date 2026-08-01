@@ -648,7 +648,15 @@ export default function SubjectHub({
       setUploadSuccess(`⏳ Step 2/2: Inserting metadata row into Supabase PostgreSQL 'study_materials' table...`);
 
       // 2. Insert metadata into Supabase PostgreSQL table 'study_materials'
-      await insertMaterialToSupabaseDB(cloudRes);
+      try {
+        await insertMaterialToSupabaseDB(cloudRes);
+        console.log(`[SUPABASE DB INSERT SUCCESS] Record for "${cloudRes.name}" successfully inserted into study_materials table.`);
+        logDiagnostic("success", `[SUPABASE DB INSERT SUCCESS] Record for "${cloudRes.name}" successfully inserted into study_materials table.`);
+      } catch (dbErr: any) {
+        console.error(`[SUPABASE DB INSERT FAILED] Failed to insert metadata for "${cloudRes.name}" into study_materials:`, dbErr);
+        logDiagnostic("error", `[SUPABASE DB INSERT FAILED] Failed to insert metadata into study_materials: ${dbErr?.message || dbErr}`);
+        throw dbErr;
+      }
 
       const newMaterial: StudyMaterial = {
         id: cloudRes.id,
