@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Subject, Unit, StudyMaterial, YouTubeReference } from "../types";
 import { getFileFromIndexedDB, base64ToBlob } from "../lib/fileStorage";
 import { getFileContentFromCloud, logDiagnostic } from "../lib/firebase";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB, fetchMaterialsFromSupabaseDB, UploadResult } from "../lib/supabase";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB, fetchMaterialsFromSupabaseDB, deleteMaterialFromSupabase, UploadResult } from "../lib/supabase";
 import { 
   ChevronRight, 
   BookOpen, 
@@ -419,12 +419,20 @@ export default function SubjectHub({
   };
 
   const handleDeleteUnitMaterial = async (unitId: string, materialId: string) => {
+    if (!isAdmin) {
+      alert("Only an authenticated admin can delete study materials.");
+      return;
+    }
     if (!window.confirm("Are you sure you want to delete this file/note from this unit?")) return;
     const targetUnit = subject.units.find(u => u.id === unitId);
     const targetMat = targetUnit?.materials?.find(m => m.id === materialId);
-    if (targetMat?.cloudPath) {
-      await deleteFileFromSupabaseStorage(targetMat.cloudPath);
+    
+    const delRes = await deleteMaterialFromSupabase(materialId, targetMat?.cloudPath);
+    if (!delRes.success) {
+      alert(`Deletion Failed: ${delRes.message}`);
+      return;
     }
+
     const updatedUnits = subject.units.map(unit => {
       if (unit.id !== unitId) return unit;
       return {
@@ -436,18 +444,28 @@ export default function SubjectHub({
       ...subject,
       units: updatedUnits
     });
+    alert("Study material deleted successfully from Supabase Storage and Database! 🥕");
   };
 
   const handleDeleteSubjectMaterial = async (materialId: string) => {
+    if (!isAdmin) {
+      alert("Only an authenticated admin can delete study materials.");
+      return;
+    }
     if (!window.confirm("Are you sure you want to delete this file/note from this subject?")) return;
     const targetMat = subject.materials?.find(m => m.id === materialId);
-    if (targetMat?.cloudPath) {
-      await deleteFileFromSupabaseStorage(targetMat.cloudPath);
+    
+    const delRes = await deleteMaterialFromSupabase(materialId, targetMat?.cloudPath);
+    if (!delRes.success) {
+      alert(`Deletion Failed: ${delRes.message}`);
+      return;
     }
+
     onUpdateSubject({
       ...subject,
       materials: (subject.materials || []).filter(m => m.id !== materialId)
     });
+    alert("Study material deleted successfully from Supabase Storage and Database! 🥕");
   };
 
   const handleAddYoutubeLink = (unitId: string) => {

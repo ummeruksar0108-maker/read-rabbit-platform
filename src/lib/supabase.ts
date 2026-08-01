@@ -191,21 +191,61 @@ export async function fetchAllMaterialsFromSupabaseDB(): Promise<UploadResult[]>
 
 /**
  * Deletes material metadata row from Supabase DB and deletes file from Storage bucket.
+ * Deletes from Storage FIRST using cloudPath, then deletes row from DB using id.
+ * Returns success only after BOTH operations succeed.
  */
-export async function deleteMaterialFromSupabase(id: string, cloudPath?: string): Promise<boolean> {
+export async function deleteMaterialFromSupabase(
+  id: string,
+  cloudPath?: string
+): Promise<{ success: boolean; message: string }> {
   try {
-    if (cloudPath) {
-      await deleteFileFromSupabaseStorage(cloudPath);
+    let targetCloudPath = cloudPath;
+
+    // If cloudPath is missing, fetch row from study_materials table first
+    if (!targetCloudPath && id) {
+      const { data: row } = await supabase
+        .from("study_materials")
+        .select("cloud_path")
+        .eq("id", id)
+        .maybeSingle();
+      if (row?.cloud_path) {
+        targetCloudPath = row.cloud_path;
+      }
     }
-    const { error } = await supabase.from("study_materials").delete().eq("id", id);
-    if (error) {
-      logDiagnostic("warn", `[Supabase DB Delete Warning] ${error.message}`);
-      return false;
+
+    // Step 1: Delete object from Supabase Storage using cloud_path
+    if (targetCloudPath) {
+      logDiagnostic("info", `[Supabase Storage] Deleting file '${targetCloudPath}'...`);
+      const storageSuccess = await deleteFileFromSupabaseStorage(targetCloudPath);
+      if (!storageSuccess) {
+        const msg = `Failed to delete file '${targetCloudPath}' from Supabase Storage. Database record deletion was aborted.`;
+        logDiagnostic("error", `[Supabase Delete Storage Failed] ${msg}`);
+        return { success: false, message: msg };
+      }
     }
-    logDiagnostic("success", `[Supabase DB Delete Success] Material ${id} deleted.`);
-    return true;
-  } catch (err) {
-    return false;
+
+    // Step 2: Delete metadata row from public.study_materials using id
+    logDiagnostic("info", `[Supabase DB] Deleting record '${id}' from study_materials...`);
+    const { error: dbError } = await supabase
+      .from("study_materials")
+      .delete()
+      .eq("id", id);
+
+    if (dbError) {
+      const msg = `Failed to delete record from study_materials table: ${dbError.message}`;
+      logDiagnostic("error", `[Supabase DB Delete Failed] ${msg}`);
+      return { success: false, message: msg };
+    }
+
+    logDiagnostic("success", `[Supabase Delete Complete] Object '${targetCloudPath}' and DB record '${id}' deleted successfully.`);
+    return {
+      success: true,
+      message: `File successfully deleted from Supabase Storage and Database.`
+    };
+  } catch (err: any) {
+    const msg = err?.message || "Unexpected error during material deletion.";
+    logDiagnostic("error", `[Supabase Delete Exception] ${msg}`);
+    return { success: false, message: msg };
   }
 }
 

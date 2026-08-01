@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Course, Subject, Semester, Unit, StudyMaterial } from "../types";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB } from "../lib/supabase";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, insertMaterialToSupabaseDB, deleteMaterialFromSupabase, supabase } from "../lib/supabase";
 import { 
   ShieldCheck, 
   Lock, 
@@ -56,6 +56,7 @@ export default function AdminPortal({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
 
   // Admin Dashboard main tab state: 'curriculum' | 'uploads' | 'sync' | 'semesters' | 'notifications' | 'security'
   const [activeAdminTab, setActiveAdminTab] = useState<"curriculum" | "uploads" | "sync" | "semesters" | "notifications" | "security">("curriculum");
@@ -160,9 +161,19 @@ export default function AdminPortal({
     materialId: string,
     subjectId: string,
     unitId?: string,
-    detailsUrl?: string
+    cloudPath?: string
   ) => {
+    if (!isAdmin) {
+      alert("Only an authenticated admin can delete study materials.");
+      return;
+    }
     if (!confirm("Are you sure you want to delete this upload from the curriculum? This cannot be undone.")) return;
+
+    const delRes = await deleteMaterialFromSupabase(materialId, cloudPath);
+    if (!delRes.success) {
+      alert(`Deletion Failed: ${delRes.message}`);
+      return;
+    }
 
     const updatedCourses = courses.map((course) => ({
       ...course,
@@ -195,16 +206,7 @@ export default function AdminPortal({
     onUpdateCourses(updatedCourses);
     await handleSaveCurriculumToCloud(updatedCourses);
 
-    if (detailsUrl && detailsUrl.startsWith("/api/files/")) {
-      const filename = detailsUrl.replace("/api/files/", "");
-      try {
-        await fetch(`/api/files/${filename}`, { method: "DELETE" });
-      } catch (e) {
-        console.warn("Server file delete note:", e);
-      }
-    }
-
-    alert("Study material deleted successfully! 🥕");
+    alert("Study material deleted successfully from Supabase Storage and Database! 🥕");
   };
 
   // Delete raw file from server disk
@@ -328,30 +330,66 @@ export default function AdminPortal({
   const [securitySuccess, setSecuritySuccess] = useState("");
   const [securityError, setSecurityError] = useState("");
 
-  // Handle Login
-  const handleLogin = (e: React.FormEvent) => {
+  // Helper to verify single configured admin email
+  const isApprovedAdminEmail = (userEmail?: string | null): boolean => {
+    if (!userEmail) return false;
+    const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || "thecodeorbitoffi@gmail.com").trim().toLowerCase();
+    return userEmail.trim().toLowerCase() === adminEmail;
+  };
+
+  // Handle Supabase Auth Login
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      setLoginError("Please enter both an admin email and a password.");
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedEmail || !password) {
+      setLoginError("Please enter both an admin email and password.");
       return;
     }
 
-    // Strict validation
-    if (email.toLowerCase() !== "admin@readrabbit.edu") {
-      setLoginError("Invalid administrator email. Authorized personnel only.");
+    if (!isApprovedAdminEmail(trimmedEmail)) {
+      setLoginError("Unauthorized account.");
       return;
     }
 
-    if (password === adminPassword) {
-      setIsAdmin(true);
-      setLoginError("");
-    } else {
-      setLoginError("Incorrect password. Please verify your administrator credentials.");
+    setIsAuthLoading(true);
+    setLoginError("");
+
+    try {
+      // Sign in existing admin account with Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: password,
+      });
+
+      if (error) {
+        console.warn("[SUPABASE AUTH LOGIN ERROR]", error.message);
+        setLoginError(`Authentication Failed: ${error.message}`);
+      } else if (data.session && data.user) {
+        const userEmail = data.user.email;
+        if (isApprovedAdminEmail(userEmail)) {
+          setIsAdmin(true);
+          setLoginError("");
+        } else {
+          await supabase.auth.signOut();
+          setIsAdmin(false);
+          setLoginError("Unauthorized account.");
+        }
+      }
+    } catch (err: any) {
+      setLoginError(err?.message || "Authentication failed. Please verify your credentials.");
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
-  // Handle Logout
-  const handleLogout = () => {
+  // Handle Logout from Supabase Auth
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn("SignOut error:", e);
+    }
     setIsAdmin(false);
     setEmail("");
     setPassword("");
@@ -700,12 +738,19 @@ export default function AdminPortal({
 
   // Delete PDF study material from inside a unit
   const handleDeletePdfFromUnit = async (unitId: string, materialId: string) => {
+    if (!isAdmin) {
+      alert("Only an authenticated admin can delete study materials.");
+      return;
+    }
     if (!window.confirm("Are you sure you want to delete this PDF file from this unit?")) return;
 
     const targetUnit = formUnits.find(u => u.id === unitId);
     const targetMat = targetUnit?.materials?.find(m => m.id === materialId);
-    if (targetMat?.cloudPath) {
-      await deleteFileFromSupabaseStorage(targetMat.cloudPath);
+
+    const delRes = await deleteMaterialFromSupabase(materialId, targetMat?.cloudPath);
+    if (!delRes.success) {
+      alert(`Deletion Failed: ${delRes.message}`);
+      return;
     }
 
     const updatedFormUnits = formUnits.map(unit => {
@@ -745,6 +790,7 @@ export default function AdminPortal({
         units: updatedFormUnits
       });
     }
+    alert("Study material deleted successfully from Supabase Storage and Database! 🥕");
   };
 
   // Add Dynamic Semester
@@ -872,7 +918,7 @@ export default function AdminPortal({
             </div>
             <div>
               <h2 className="text-2xl font-extrabold text-[#40010d]">Administrator Portal</h2>
-              <p className="text-xs text-[#544243] mt-1">Authorized burrow access only</p>
+              <p className="text-xs text-[#544243] mt-1">Supabase Auth Protected • Authorized Admin Access Only</p>
             </div>
           </div>
 
@@ -884,10 +930,10 @@ export default function AdminPortal({
               <input
                 type="email"
                 required
-                placeholder="admin@readrabbit.edu"
+                placeholder="thecodeorbitoffi@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#fff8f3]/60 border border-[#dac1c1] focus:border-[#fd9b65] focus:ring-1 focus:ring-[#fd9b65] rounded-xl px-4 py-3 text-sm focus:outline-none"
+                className="w-full bg-[#fff8f3]/60 border border-[#dac1c1] focus:border-[#fd9b65] focus:ring-1 focus:ring-[#fd9b65] rounded-xl px-4 py-3 text-sm focus:outline-none font-bold text-[#40010d]"
               />
             </div>
 
@@ -901,13 +947,13 @@ export default function AdminPortal({
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#fff8f3]/60 border border-[#dac1c1] focus:border-[#fd9b65] focus:ring-1 focus:ring-[#fd9b65] rounded-xl px-4 py-3 text-sm focus:outline-none"
+                className="w-full bg-[#fff8f3]/60 border border-[#dac1c1] focus:border-[#fd9b65] focus:ring-1 focus:ring-[#fd9b65] rounded-xl px-4 py-3 text-sm focus:outline-none font-bold text-[#40010d]"
               />
             </div>
 
             {loginError && (
               <p className="text-xs font-semibold text-red-600 bg-red-50 p-3 rounded-lg flex items-center gap-1.5">
-                <Info size={14} /> {loginError}
+                <Info size={14} className="shrink-0" /> {loginError}
               </p>
             )}
 
@@ -923,9 +969,18 @@ export default function AdminPortal({
               )}
               <button
                 type="submit"
-                className="flex-[2] bg-[#40010d] text-white py-3 rounded-xl font-bold text-xs hover:bg-[#7a2c35] active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2"
+                disabled={isAuthLoading}
+                className="flex-[2] bg-[#40010d] text-white py-3 rounded-xl font-bold text-xs hover:bg-[#7a2c35] active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <ShieldCheck size={16} /> Log In
+                {isAuthLoading ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" /> Authenticating...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={16} /> Log In
+                  </>
+                )}
               </button>
             </div>
           </form>
@@ -1664,7 +1719,7 @@ export default function AdminPortal({
                                 </a>
                               )}
                               <button
-                                onClick={() => handleDeleteMaterialFromAdmin(mat.id, item.subjectId, item.unitId, mat.details)}
+                                onClick={() => handleDeleteMaterialFromAdmin(mat.id, item.subjectId, item.unitId, mat.cloudPath)}
                                 className="p-2 bg-red-50 text-red-700 hover:bg-red-700 hover:text-white rounded-xl transition-all font-bold text-xs cursor-pointer"
                                 title="Delete Upload"
                               >

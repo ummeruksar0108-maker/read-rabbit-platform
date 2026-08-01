@@ -16,6 +16,7 @@ import AddSubjectModal from "./components/AddSubjectModal";
 import FirebaseDiagnosticsPanel from "./components/FirebaseDiagnosticsPanel";
 import { Logo } from "./components/Logo";
 import { logDiagnostic } from "./lib/firebase";
+import { supabase } from "./lib/supabase";
 
 // Icons for Responsive Top Bar
 import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft, LogOut } from "lucide-react";
@@ -252,6 +253,44 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("read_rabbit_is_admin", isAdmin ? "true" : "false");
   }, [isAdmin]);
+
+  // Helper to verify single configured admin email
+  const isApprovedAdminEmail = (userEmail?: string | null): boolean => {
+    if (!userEmail) return false;
+    const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || "thecodeorbitoffi@gmail.com").trim().toLowerCase();
+    return userEmail.trim().toLowerCase() === adminEmail;
+  };
+
+  // Sync Supabase Auth session with isAdmin state
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const userEmail = session?.user?.email;
+      if (session?.user && isApprovedAdminEmail(userEmail)) {
+        setIsAdmin(true);
+      } else {
+        if (session?.user) {
+          supabase.auth.signOut();
+        }
+        setIsAdmin(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const userEmail = session?.user?.email;
+      if (session?.user && isApprovedAdminEmail(userEmail)) {
+        setIsAdmin(true);
+      } else {
+        if (session?.user) {
+          supabase.auth.signOut();
+        }
+        setIsAdmin(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("read_rabbit_student_name", studentName);
