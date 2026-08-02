@@ -43,7 +43,7 @@ export default function Sidebar({
   ];
 
   return (
-    <aside className="hidden md:flex flex-col h-screen max-h-screen overflow-y-auto py-6 pb-8 border-r border-[#dac1c1]/50 bg-[#fff2e1]/70 w-64 fixed left-0 top-0 text-[#231a0a] justify-between z-40">
+    <aside className="hidden md:flex flex-col h-screen max-h-screen overflow-y-auto py-6 pb-8 border-r border-[#E2D4C3] bg-[#F4ECE1]/90 w-64 fixed left-0 top-0 text-[#2A1C18] justify-between z-40 backdrop-blur-md">
       <div>
         {/* Logo and Course Info */}
         <div className="px-6 mb-8 flex flex-col items-center text-center space-y-3">
@@ -55,15 +55,15 @@ export default function Sidebar({
             <Logo size="md" />
           </div>
           <div>
-            <h2 className="font-sans text-lg font-extrabold tracking-tight text-[#40010d]">
+            <h2 className="font-sans text-lg font-extrabold tracking-tight text-[#1E1412]">
               READ RABBIT
             </h2>
             {selectedCourseName ? (
-              <span className="text-[10px] bg-[#fd9b65] text-[#341100] px-2.5 py-0.5 rounded-full font-bold inline-block mt-1">
+              <span className="text-[10px] bg-[#D97706] text-white px-2.5 py-0.5 rounded-full font-bold inline-block mt-1 shadow-xs">
                 {selectedCourseName}
               </span>
             ) : (
-              <span className="text-[10px] text-[#544243] font-sans font-medium opacity-80">
+              <span className="text-[10px] text-[#735E55] font-sans font-medium opacity-90">
                 A Burrow of Knowledge
               </span>
             )}
@@ -81,16 +81,16 @@ export default function Sidebar({
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center justify-between gap-3 rounded-xl px-4 py-3 transition-all duration-250 cursor-pointer ${
                   isActive
-                    ? "bg-[#fd9b65] text-[#341100] font-bold shadow-xs transform translate-x-1"
-                    : "text-[#544243] hover:bg-[#f8e6cb] hover:text-[#231a0a]"
+                    ? "bg-[#1E1412] text-white font-bold shadow-md transform translate-x-1 border border-[#D97706]/30"
+                    : "text-[#2A1C18] hover:bg-[#E2D4C3]/40 hover:text-[#1E1412]"
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon size={18} className={isActive ? "text-[#341100]" : "text-[#877272]"} />
+                  <Icon size={18} className={isActive ? "text-[#FEF3C7]" : "text-[#735E55]"} />
                   <span className="text-sm font-sans font-semibold">{item.label}</span>
                 </div>
                 {item.badge !== undefined && (
-                  <span className="bg-[#6b8a80] text-white text-[9px] px-2 py-0.5 rounded-full font-bold">
+                  <span className="bg-[#D97706] text-white text-[9px] px-2 py-0.5 rounded-full font-bold">
                     {item.badge}
                   </span>
                 )}
@@ -102,9 +102,9 @@ export default function Sidebar({
           {selectedCourseName && (
             <button
               onClick={onChangeCourse}
-              className="w-[calc(100%-8px)] mx-1 flex items-center gap-3 rounded-xl px-4 py-3 text-[#95491a] hover:bg-[#f8e6cb] transition-all cursor-pointer border border-dashed border-[#fd9b65]/20 mt-4 text-left"
+              className="w-[calc(100%-8px)] mx-1 flex items-center gap-3 rounded-xl px-4 py-3 text-[#1E1412] hover:bg-[#E2D4C3]/50 transition-all cursor-pointer border border-dashed border-[#E2D4C3] mt-4 text-left"
             >
-              <RefreshCw size={18} className="text-[#95491a]" />
+              <RefreshCw size={18} className="text-[#D97706]" />
               <span className="text-sm font-sans font-bold">Switch Course</span>
             </button>
           )}
@@ -116,19 +116,19 @@ export default function Sidebar({
           onClick={() => setActiveTab("help")}
           className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
             activeTab === "help"
-              ? "bg-[#fd9b65]/20 text-[#231a0a] font-semibold"
-              : "text-[#544243] hover:bg-[#f8e6cb]"
+              ? "bg-[#D97706]/20 text-[#1E1412] font-semibold"
+              : "text-[#2A1C18] hover:bg-[#E2D4C3]/40"
           }`}
         >
-          <HelpCircle size={18} className="text-[#877272]" />
+          <HelpCircle size={18} className="text-[#735E55]" />
           <span className="text-sm font-sans">Help</span>
         </button>
 
         <button
           onClick={() => setActiveTab("logout")}
-          className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-red-700 hover:bg-red-50 transition-all cursor-pointer"
+          className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[#C62828] hover:bg-red-50 transition-all cursor-pointer"
         >
-          <LogOut size={18} className="text-red-500" />
+          <LogOut size={18} className="text-[#C62828]" />
           <span className="text-sm font-sans">Logout</span>
         </button>
       </div>

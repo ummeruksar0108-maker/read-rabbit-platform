@@ -869,65 +869,65 @@ export default function SubjectHub({
   };
 
   return (
-    <div className="flex-1 min-h-screen px-4 md:px-8 py-8 pb-32 text-[#231a0a] font-sans">
+    <div className="flex-1 min-h-screen px-4 md:px-8 py-8 pb-32 text-[#2A1C18] font-sans">
       
       {/* Page Back Action */}
       <button
         onClick={onBackToSubjects}
-        className="mb-6 flex items-center gap-1.5 text-xs text-[#95491a] hover:text-[#40010d] font-bold transition-all cursor-pointer bg-[#f8e6cb]/30 hover:bg-[#f8e6cb]/60 px-3.5 py-2 rounded-xl border border-[#dac1c1]/20 shadow-xs"
+        className="mb-6 flex items-center gap-1.5 text-xs text-[#1E1412] hover:text-[#D97706] font-bold transition-all cursor-pointer bg-[#F4ECE1] hover:bg-[#E2D4C3]/60 px-3.5 py-2 rounded-xl border border-[#E2D4C3] shadow-xs"
       >
         <ArrowLeft size={14} /> Back to Subjects list
       </button>
 
       {/* Interactive Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[#544243] text-xs font-medium mb-8">
-        <button onClick={onBackToSubjects} className="hover:text-[#95491a] font-semibold transition-colors">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[#735E55] text-xs font-medium mb-8">
+        <button onClick={onBackToSubjects} className="hover:text-[#1E1412] font-semibold transition-colors">
           {courseName}
         </button>
-        <ChevronRight size={12} className="text-[#877272]" />
-        <span className="text-[#877272]">{semesterName}</span>
-        <ChevronRight size={12} className="text-[#877272]" />
-        <span className="text-[#231a0a] font-bold">{subject.name}</span>
+        <ChevronRight size={12} className="text-[#D97706]" />
+        <span className="text-[#735E55]">{semesterName}</span>
+        <ChevronRight size={12} className="text-[#D97706]" />
+        <span className="text-[#1E1412] font-bold">{subject.name}</span>
       </nav>
 
       {/* Subject Header Banner */}
-      <section className="mb-8 bg-gradient-to-br from-white to-[#feebd0] rounded-3xl p-6 md:p-8 border border-[#dac1c1]/30 shadow-xs relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-32 h-32 bg-[#fd9b65]/5 rounded-full blur-2xl pointer-events-none"></div>
+      <section className="mb-8 bg-gradient-to-br from-white to-[#FDFBF7] rounded-3xl p-6 md:p-8 border border-[#E2D4C3] shadow-xs relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-32 h-32 bg-[#D97706]/10 rounded-full blur-2xl pointer-events-none"></div>
 
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className="bg-[#40010d] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+              <span className="bg-[#1E1412] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
                 {subject.difficulty}
               </span>
               {subject.isLab && (
-                <span className="bg-[#accec2]/40 text-[#2e4c43] text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                <span className="bg-[#D97706]/20 text-[#1E1412] text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                   Laboratory Course
                 </span>
               )}
             </div>
             
-            <h2 className="text-3xl font-extrabold text-[#40010d] tracking-tight">
+            <h2 className="text-3xl font-extrabold text-[#1E1412] tracking-tight">
               {subject.name}
             </h2>
-            <p className="text-[#544243] text-sm max-w-xl leading-relaxed">
+            <p className="text-[#2A1C18] text-sm max-w-xl leading-relaxed">
               {subject.description}
             </p>
           </div>
 
           {/* Subject Progress Card */}
-          <div className="w-full md:w-64 bg-white p-4 rounded-2xl border border-[#dac1c1]/20 shadow-xs flex flex-col justify-between">
+          <div className="w-full md:w-64 bg-white p-4 rounded-2xl border border-[#E2D4C3] shadow-xs flex flex-col justify-between">
             <div className="flex justify-between items-center mb-2">
-              <span className="text-[10px] font-extrabold text-[#877272] uppercase tracking-wider">Subject Mastery</span>
-              <span className="text-sm font-extrabold text-[#95491a]">{subject.progressPercent}%</span>
+              <span className="text-[10px] font-extrabold text-[#735E55] uppercase tracking-wider">Subject Mastery</span>
+              <span className="text-sm font-extrabold text-[#D97706]">{subject.progressPercent}%</span>
             </div>
-            <div className="w-full bg-[#f8e6cb] h-2 rounded-full overflow-hidden mb-3">
+            <div className="w-full bg-[#F4ECE1] h-2 rounded-full overflow-hidden mb-3">
               <div 
-                className="h-full bg-gradient-to-r from-[#fd9b65] to-[#95491a] rounded-full transition-all duration-500" 
+                className="h-full bg-gradient-to-r from-[#D97706] to-[#1E1412] rounded-full transition-all duration-500" 
                 style={{ width: `${subject.progressPercent}%` }}
               ></div>
             </div>
-            <span className="text-[10px] text-[#544243] font-medium block">
+            <span className="text-[10px] text-[#2A1C18] font-medium block">
               {subject.completedModules} of {subject.units.length} Units Mastered
             </span>
           </div>
@@ -935,7 +935,7 @@ export default function SubjectHub({
       </section>
 
       {/* Tabs Selector */}
-      <div className="flex border-b border-[#dac1c1]/30 gap-2 mb-6 overflow-x-auto whitespace-nowrap">
+      <div className="flex border-b border-[#E2D4C3] gap-2 mb-6 overflow-x-auto whitespace-nowrap">
         {[
           { id: "syllabus", label: "Syllabus Units", count: subject.units.length },
           { id: "materials", label: "Study Files", count: subject.materials?.length || 0 },
@@ -948,14 +948,14 @@ export default function SubjectHub({
               onClick={() => setActiveTab(tab.id as any)}
               className={`py-3 px-4 font-sans text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
                 isActive
-                  ? "border-[#40010d] text-[#40010d]"
-                  : "border-transparent text-[#544243] hover:text-[#231a0a]"
+                  ? "border-[#D97706] text-[#1E1412]"
+                  : "border-transparent text-[#735E55] hover:text-[#1E1412]"
               }`}
             >
-              {tab.icon && <tab.icon size={14} className={isActive ? "text-[#95491a]" : "text-[#877272]"} />}
+              {tab.icon && <tab.icon size={14} className={isActive ? "text-[#D97706]" : "text-[#735E55]"} />}
               {tab.label}
               {tab.count !== undefined && (
-                <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${isActive ? "bg-[#40010d] text-white" : "bg-gray-100 text-[#544243]"}`}>
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${isActive ? "bg-[#1E1412] text-white" : "bg-[#F4ECE1] text-[#2A1C18]"}`}>
                   {tab.count}
                 </span>
               )}
@@ -980,15 +980,15 @@ export default function SubjectHub({
                   key={unit.id}
                   onClick={() => setSelectedUnit(selectedUnit?.id === unit.id ? null : unit)}
                   className={`bg-white rounded-3xl p-6 border transition-all cursor-pointer hover:shadow-md ${
-                    selectedUnit?.id === unit.id ? "border-[#fd9b65] ring-1 ring-[#fd9b65]/20" : "border-[#dac1c1]/25"
+                    selectedUnit?.id === unit.id ? "border-[#A67C52] ring-1 ring-[#A67C52]/20" : "border-[#D8C4AC]"
                   }`}
                 >
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold text-[#877272] bg-slate-100 px-2.5 py-1 rounded-lg">
+                      <span className="text-xs font-bold text-[#8B6B52] bg-[#F3ECE5] px-2.5 py-1 rounded-lg">
                         {unit.number}
                       </span>
-                      <h4 className="font-bold text-sm text-[#40010d] group-hover:text-[#95491a]">
+                      <h4 className="font-bold text-sm text-[#561C24] group-hover:text-[#6D2932]">
                         {unit.name}
                       </h4>
                     </div>
@@ -999,9 +999,9 @@ export default function SubjectHub({
                         handleToggleUnitStatus(unit.id);
                       }}
                       className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all ${
-                        isMastered ? "bg-[#c8eadd] border-[#6b8a80] text-[#012019]" :
-                        isInProgress ? "bg-[#ffdbca] border-[#fd9b65] text-[#773203]" :
-                        "bg-gray-50 border-gray-200 text-[#877272]"
+                        isMastered ? "bg-[#4CAF50]/15 border-[#4CAF50] text-[#4CAF50]" :
+                        isInProgress ? "bg-[#EEE4DA] border-[#A67C52] text-[#561C24]" :
+                        "bg-[#F3ECE5] border-[#D8C4AC] text-[#8B6B52]"
                       }`}
                       title="Click to toggle study progress status"
                     >
@@ -1009,17 +1009,17 @@ export default function SubjectHub({
                     </button>
                   </div>
 
-                  <p className="text-[#544243] text-xs leading-relaxed mb-4">
+                  <p className="text-[#4E342E] text-xs leading-relaxed mb-4">
                     {unit.description || "Comprehensive syllabus topics designed to align perfectly with course specifications."}
                   </p>
 
                   {/* Topics List accordion */}
                   {unit.topics && unit.topics.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
-                      <span className="text-[10px] font-extrabold text-[#95491a] tracking-wider uppercase block">Unit Syllabus Core Topics:</span>
+                    <div className="mt-4 pt-4 border-t border-[#D8C4AC]/40 space-y-2">
+                      <span className="text-[10px] font-extrabold text-[#A67C52] tracking-wider uppercase block">Unit Syllabus Core Topics:</span>
                       <div className="flex flex-wrap gap-1.5 pt-1">
                         {unit.topics.map((t, idx) => (
-                          <span key={idx} className="bg-[#fff8f3] border border-[#dac1c1]/30 text-[#544243] text-[10px] px-2 py-1 rounded-lg">
+                          <span key={idx} className="bg-[#F8F4EF] border border-[#D8C4AC] text-[#4E342E] text-[10px] px-2 py-1 rounded-lg">
                             {t}
                           </span>
                         ))}
@@ -1028,16 +1028,16 @@ export default function SubjectHub({
                   )}
 
                   {/* Unit Content Sub-Tabs (Notes, Important Questions, YouTube References) */}
-                  <div className="mt-4 pt-4 border-t border-gray-100 space-y-4" onClick={(e) => e.stopPropagation()}>
+                  <div className="mt-4 pt-4 border-t border-[#D8C4AC]/40 space-y-4" onClick={(e) => e.stopPropagation()}>
                     {/* Sub-Tab Navigation Pills */}
-                    <div className="flex gap-1.5 p-1 bg-[#fff8f3] rounded-2xl border border-[#dac1c1]/30 overflow-x-auto">
+                    <div className="flex gap-1.5 p-1 bg-[#F8F4EF] rounded-2xl border border-[#D8C4AC] overflow-x-auto">
                       <button
                         type="button"
                         onClick={() => setUnitActiveTab(prev => ({ ...prev, [unit.id]: "notes" }))}
                         className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                           (unitActiveTab[unit.id] || "notes") === "notes"
-                            ? "bg-[#40010d] text-white shadow-xs"
-                            : "text-[#544243] hover:bg-white/60"
+                            ? "bg-[#561C24] text-white shadow-xs"
+                            : "text-[#4E342E] hover:bg-white/60"
                         }`}
                       >
                         <FileText size={13} />
@@ -1049,8 +1049,8 @@ export default function SubjectHub({
                         onClick={() => setUnitActiveTab(prev => ({ ...prev, [unit.id]: "questions" }))}
                         className={`flex-1 min-w-[120px] py-1.5 px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                           unitActiveTab[unit.id] === "questions"
-                            ? "bg-[#40010d] text-white shadow-xs"
-                            : "text-[#544243] hover:bg-white/60"
+                            ? "bg-[#561C24] text-white shadow-xs"
+                            : "text-[#4E342E] hover:bg-white/60"
                         }`}
                       >
                         <HelpCircle size={13} />

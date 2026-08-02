@@ -19,23 +19,61 @@ import { logDiagnostic } from "./lib/firebase";
 import { supabase } from "./lib/supabase";
 
 // Icons for Responsive Top Bar
-import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft, LogOut } from "lucide-react";
+import { Menu, Search, X, Sparkles, Layers, ShieldCheck, Settings, HelpCircle, Bell, BookOpen, RefreshCw, ArrowLeft, LogOut, Palette, Check } from "lucide-react";
+import { bgPresets } from "./components/ExtraTabs";
+
+
+const CURRICULUM_STORAGE_KEY = "read_rabbit_curriculum_v2";
+
+const hasAllDefaultCourses = (value: unknown): value is Course[] => {
+  if (!Array.isArray(value)) return false;
+
+  const savedCourseIds = new Set(
+    value
+      .filter((course): course is Course => Boolean(course && typeof course === "object" && "id" in course))
+      .map((course) => course.id)
+  );
+
+  return initialCourses.every((course) => savedCourseIds.has(course.id));
+};
 
 export default function App() {
+  // Website Background Color State with Local Storage persistence
+  const [bgColor, setBgColor] = useState<string>(() => {
+    return localStorage.getItem("read_rabbit_bg_color") || "#FAF3E0";
+  });
+  const [isBgPickerOpen, setIsBgPickerOpen] = useState(false);
+
+  // Sync background color to document body
+  useEffect(() => {
+    document.body.style.backgroundColor = bgColor;
+    localStorage.setItem("read_rabbit_bg_color", bgColor);
+  }, [bgColor]);
+
   // Splash Screen State - always show initial loading display on web page open
   const [isSplash, setIsSplash] = useState(true);
 
   // Core Courses State with Local Storage persistence
   const [courses, setCourses] = useState<Course[]>(() => {
-    const saved = localStorage.getItem("read_rabbit_curriculum_v2");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
+    const saved = localStorage.getItem(CURRICULUM_STORAGE_KEY);
+
+    if (!saved) return initialCourses;
+
+    try {
+      const parsed: unknown = JSON.parse(saved);
+
+      // Reject stale curriculum snapshots that are missing a default course,
+      // such as BCA DS, and restore the complete curriculum from data.ts.
+      if (!hasAllDefaultCourses(parsed)) {
+        localStorage.removeItem(CURRICULUM_STORAGE_KEY);
         return initialCourses;
       }
+
+      return parsed;
+    } catch {
+      localStorage.removeItem(CURRICULUM_STORAGE_KEY);
+      return initialCourses;
     }
-    return initialCourses;
   });
 
   // Active state tracks
@@ -168,7 +206,7 @@ export default function App() {
   const saveCurriculumToServer = async (coursesToSave: Course[]): Promise<boolean> => {
     lastLocalMutationTime.current = Date.now();
     try {
-      localStorage.setItem("read_rabbit_curriculum_v2", JSON.stringify(coursesToSave));
+      localStorage.setItem(CURRICULUM_STORAGE_KEY, JSON.stringify(coursesToSave));
       setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
       return true;
     } catch (e) {
@@ -182,14 +220,27 @@ export default function App() {
     if (isManualCall) setIsSyncingServer(true);
     isFetchingFromServer.current = true;
     try {
-      const saved = localStorage.getItem("read_rabbit_curriculum_v2");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setCourses(parsed);
-          setLastSyncSuccessTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-        }
+      const saved = localStorage.getItem(CURRICULUM_STORAGE_KEY);
+
+      if (!saved) {
+        setCourses(initialCourses);
+        return;
       }
+
+      const parsed: unknown = JSON.parse(saved);
+
+      if (hasAllDefaultCourses(parsed)) {
+        setCourses(parsed);
+      } else {
+        // A stale snapshot is overriding data.ts and hiding one or more courses.
+        // Replace it with the complete default curriculum.
+        localStorage.setItem(CURRICULUM_STORAGE_KEY, JSON.stringify(initialCourses));
+        setCourses(initialCourses);
+      }
+
+      setLastSyncSuccessTime(
+        new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      );
     } catch (err) {
       console.warn("[CURRICULUM FETCH WARN]", err);
     } finally {
@@ -600,7 +651,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fff8f3] text-[#231a0a] flex flex-col md:flex-row relative">
+    <div className="min-h-screen transition-colors duration-300 flex flex-col md:flex-row relative" style={{ backgroundColor: bgColor }}>
       {/* Background ambient blurring light circles */}
       <div className="absolute top-1/3 left-1/4 w-80 h-80 bg-[#fd9b65]/5 rounded-full filter blur-3xl pointer-events-none"></div>
       <div className="absolute bottom-10 right-1/4 w-96 h-96 bg-[#accec2]/10 rounded-full filter blur-3xl pointer-events-none"></div>
@@ -676,6 +727,8 @@ export default function App() {
                 className="bg-transparent border-none text-xs font-sans focus:outline-none placeholder-[#877272] w-44"
               />
             </div>
+
+
 
             {/* Notification trigger with custom drawer popup */}
             <div className="relative">
@@ -963,6 +1016,8 @@ export default function App() {
               }}
               studentName={studentName}
               setStudentName={setStudentName}
+              bgColor={bgColor}
+              setBgColor={setBgColor}
             />
           )}
 

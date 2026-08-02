@@ -18,28 +18,28 @@ export default function CurriculumRoadmap({ courses, activeCourseId, onSelectSem
     .some(c => c.semesters.some(s => s.status === "Locked"));
 
   return (
-    <div className="flex-1 min-h-screen px-4 md:px-8 py-8 pb-32 text-[#231a0a]">
+    <div className="flex-1 min-h-screen px-4 md:px-8 py-8 pb-32 text-[#2A1C18]">
       {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[#544243] text-sm font-sans font-medium mb-8">
-        <span className="hover:text-[#95491a] cursor-pointer" onClick={() => window.location.reload()}>Home</span>
-        <ChevronRight size={14} className="text-[#877272]" />
-        <span className="text-[#231a0a] font-bold">Semesters</span>
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[#735E55] text-sm font-sans font-medium mb-8">
+        <span className="hover:text-[#1E1412] cursor-pointer" onClick={() => window.location.reload()}>Home</span>
+        <ChevronRight size={14} className="text-[#D97706]" />
+        <span className="text-[#1E1412] font-bold">Semesters</span>
       </nav>
 
       {/* Header Section */}
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-2">
-          <h2 className="font-sans text-3xl md:text-4xl font-extrabold text-[#40010d] tracking-tight">
+          <h2 className="font-sans text-3xl md:text-4xl font-extrabold text-[#1E1412] tracking-tight">
             Curriculum Roadmap
           </h2>
-          <p className="text-[#544243] text-sm md:text-base max-w-2xl font-sans leading-relaxed">
+          <p className="text-[#2A1C18] text-sm md:text-base max-w-2xl font-sans leading-relaxed">
             Organize your academic journey. Browse and choose a semester across our specialized courses to explore classes, study custom flashcards, and review master topics.
           </p>
         </div>
         {onUnlockAll && hasLockedSemesters && (
           <button
             onClick={onUnlockAll}
-            className="self-start md:self-auto flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-sans font-extrabold text-xs rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer whitespace-nowrap"
+            className="self-start md:self-auto flex items-center gap-2 px-5 py-3 bg-[#10B981] hover:bg-emerald-700 active:bg-emerald-800 text-white font-sans font-extrabold text-xs rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer whitespace-nowrap"
             id="btn_unlock_all_semesters"
           >
             <span>🔓</span> Unlock All Semesters
@@ -54,17 +54,17 @@ export default function CurriculumRoadmap({ courses, activeCourseId, onSelectSem
           return (
             <div key={course.id} className="space-y-6">
               {/* Course Title Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#dac1c1]/30 pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E2D4C3] pb-3">
                 <div className="space-y-1">
-                  <h3 className="font-sans text-xl font-black text-[#40010d] tracking-tight flex items-center gap-2.5">
+                  <h3 className="font-sans text-xl font-black text-[#1E1412] tracking-tight flex items-center gap-2.5">
                     {course.name}
                     {isActive && (
-                      <span className="bg-[#6b8a80] text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                        Active Study Course 🥕
+                      <span className="bg-[#D97706] text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-xs">
+                        Active Study Course ☕
                       </span>
                     )}
                   </h3>
-                  <p className="text-[#544243] text-xs font-sans leading-relaxed">
+                  <p className="text-[#2A1C18] text-xs font-sans leading-relaxed">
                     {course.description}
                   </p>
                 </div>
@@ -88,41 +88,43 @@ export default function CurriculumRoadmap({ courses, activeCourseId, onSelectSem
                           onSelectSemester(course.id, semester.id);
                         }
                       }}
-                      className={`group relative bg-white rounded-2xl p-6 soft-shadow soft-shadow-hover transition-all border-t-4 ${
-                        semester.borderClass
-                      } ${isLocked ? "cursor-not-allowed opacity-80" : "cursor-pointer"}`}
+                      className={`group relative bg-white rounded-2xl p-6 soft-shadow soft-shadow-hover transition-all border-t-4 border-[#D97706] ${
+                        isLocked ? "cursor-not-allowed opacity-80" : "cursor-pointer"
+                      }`}
                     >
                       <div className="flex justify-between items-start mb-6">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold font-sans ${semester.badgeBg}`}>
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold font-sans ${
+                          isMastered ? "bg-[#10B981]/15 text-[#10B981]" : isInProgress ? "bg-[#FEF3C7] text-[#B45309]" : "bg-[#F4ECE1] text-[#735E55]"
+                        }`}>
                           {semester.badgeText}
                         </span>
 
-                        {isMastered && <BookOpen size={18} className="text-[#6b8a80] opacity-80" />}
-                        {isInProgress && <Edit3 size={18} className="text-[#fd9b65]" />}
-                        {isLocked && <Lock size={18} className="text-[#877272] opacity-60" />}
+                        {isMastered && <BookOpen size={18} className="text-[#10B981]" />}
+                        {isInProgress && <Edit3 size={18} className="text-[#D97706]" />}
+                        {isLocked && <Lock size={18} className="text-[#735E55] opacity-60" />}
                       </div>
 
-                      <h4 className={`font-sans text-lg font-bold text-[#40010d] mb-2 ${isLocked ? "opacity-60" : ""}`}>
+                      <h4 className={`font-sans text-lg font-bold text-[#1E1412] mb-2 ${isLocked ? "opacity-60" : ""}`}>
                         {semester.name}
                       </h4>
-                      <p className={`text-[#544243] text-xs font-sans mb-6 ${isLocked ? "opacity-50" : ""}`}>
+                      <p className={`text-[#2A1C18] text-xs font-sans mb-6 ${isLocked ? "opacity-50" : ""}`}>
                         {semester.description}
                       </p>
 
                       {/* Progress Bar / Prerequisites */}
                       {!isLocked ? (
                         <div className="space-y-3">
-                          <div className="w-full bg-[#f8e6cb] h-2 rounded-full overflow-hidden">
+                          <div className="w-full bg-[#F4ECE1] h-2 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all duration-1000 ${
-                                isMastered ? "bg-[#6b8a80]" : "bg-[#fd9b65]"
+                                isMastered ? "bg-[#10B981]" : "bg-[#D97706]"
                               }`}
                               style={{ width: `${semester.progressPercent}%` }}
                             ></div>
                           </div>
-                          <div className="flex justify-between items-center text-[11px] font-sans text-[#877272] font-semibold">
+                          <div className="flex justify-between items-center text-[11px] font-sans text-[#735E55] font-semibold">
                             <span>{semester.completedModules} Modules Completed</span>
-                            <span className={isMastered ? "text-[#6b8a80] font-bold" : "text-[#fd9b65] font-bold"}>
+                            <span className={isMastered ? "text-[#10B981] font-bold" : "text-[#D97706] font-bold"}>
                               {semester.progressPercent}%
                             </span>
                           </div>
@@ -134,7 +136,7 @@ export default function CurriculumRoadmap({ courses, activeCourseId, onSelectSem
                               e.stopPropagation();
                               onShowPrereqs(semester.name);
                             }}
-                            className="text-[#95491a] hover:text-[#753101] font-sans text-xs font-bold flex items-center gap-1 group-hover:gap-2 transition-all cursor-pointer"
+                            className="text-[#1E1412] hover:text-[#D97706] font-sans text-xs font-bold flex items-center gap-1 group-hover:gap-2 transition-all cursor-pointer"
                           >
                             View Prerequisites <HelpCircle size={14} />
                           </button>
@@ -150,15 +152,15 @@ export default function CurriculumRoadmap({ courses, activeCourseId, onSelectSem
       </div>
 
       {/* Footer with small Admin Workspace trigger */}
-      <div className="mt-16 pt-8 border-t border-[#dac1c1]/20 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-sans text-[#877272]">
+      <div className="mt-16 pt-8 border-t border-[#E2D4C3] flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-sans text-[#735E55]">
         <div className="flex flex-col gap-1">
-          <span>Read Rabbit Syllabus & Peer-Certified Materials • Study Sprint 🥕</span>
-          <span className="text-[#95491a] font-medium">Created with 🧡 by <strong className="text-[#40010d]">Umme Ruksar</strong> & <strong className="text-[#40010d]">Balaji C</strong></span>
+          <span>Read Rabbit Syllabus & Peer-Certified Materials • Study Sprint ☕</span>
+          <span className="text-[#D97706] font-medium">Created with ☕ & 🍯 by <strong className="text-[#1E1412]">Umme Ruksar</strong> & <strong className="text-[#1E1412]">Balaji C</strong></span>
         </div>
         {onOpenAdminPortal && (
           <button
             onClick={onOpenAdminPortal}
-            className="flex items-center gap-1.5 bg-[#40010d]/5 hover:bg-[#40010d]/10 text-[#40010d] px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer border border-[#40010d]/10"
+            className="flex items-center gap-1.5 bg-[#1E1412]/5 hover:bg-[#1E1412]/10 text-[#1E1412] px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer border border-[#1E1412]/15"
           >
             <ShieldCheck size={13} /> Admin Workspace
           </button>
