@@ -39,7 +39,9 @@ export const initialCourses: Course[] = [
             materials: [
               { id: "mat_ds_1", name: "Set Theory & Relations Solved Proofs.pdf", size: "2.1 MB", addedTime: "Added 3 days ago", type: "pdf", isBookmarked: false, tag: "Handwritten", details: "Step-by-step mathematical proofs of power sets, bijection mapping, and equivalence relations." },
               { id: "mat_ds_2", name: "Truth Tables & Combinatorics Practice.pdf", size: "1.4 MB", addedTime: "Alumni Resource", type: "pdf", isBookmarked: false, tag: "Must Read", details: "Midterm prep booklet with 45 solved examples of permutations, logic formulas, and quantifiers." }
-            ]
+            ],
+            textbooks: [],
+            contentMode: "units",
           },
           {
             id: "problem_solving",
@@ -69,7 +71,9 @@ int main() {
     printf("Deref Pointer: %d\\n", *ptr);
     return 0;
 }` }
-            ]
+            ],
+            textbooks: [],
+            contentMode: "units",
           },
           {
             id: "computer_arch",
@@ -90,7 +94,9 @@ int main() {
             ],
             materials: [
               { id: "mat_ca_1", name: "K-Map Simplification Guide.pdf", size: "1.8 MB", addedTime: "Added 1 week ago", type: "pdf", isBookmarked: false, details: "Comprehensive guide to 3, 4, and 5 variable K-Maps with grouping and don't care conditions." }
-            ]
+            ],
+            textbooks: [],
+            contentMode: "units",
           },
           {
             id: "constitutional_values_1",
@@ -106,60 +112,152 @@ int main() {
             units: [
               { id: "cv1_u1", number: "01", name: "Constitutional I", description: "Preamble, historical framing, fundamental rights, and citizenship clauses.", masteryPercent: 100, status: "Mastered", topics: ["Drafting Committee", "Key Preamble Ideals", "Fundamental Rights (Art 14-32)", "Directive Principles of State Policy"] }
             ],
-            materials: []
-          },
+            materials: [],
+                      textbooks: [],
+            contentMode: "units",
+},
           {
             id: "english_1",
-            name: "Language 1: English",
-            description: "Literary chapters, communication drafting, grammar fundamentals, and professional vocabulary.",
-            modulesCount: 1,
-            completedModules: 1,
+            name: "English",
+            description: "Semester 1 English literature, communication, grammar, and academic writing.",
+            modulesCount: 4,
+            completedModules: 0,
             difficulty: "Core",
             icon: "Languages",
             bgColor: "bg-pink-50 text-pink-800",
             textColor: "text-pink-800",
-            progressPercent: 100,
+            progressPercent: 0,
+            contentMode: "chapters",
+            textbooks: [],
             units: [
-              { id: "eng1_u1", number: "01", name: "English Chapters", description: "Assigned prose, poetry, business correspondence layout, and writing mechanics.", masteryPercent: 100, status: "Mastered", topics: ["Prose Anthologies", "Grammar & Syntax", "Business Letter Formats", "Resume Formulation"] }
+              { id: "eng1_ch1", number: "01", name: "Chapter 1", description: "English Chapter 1 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+              { id: "eng1_ch2", number: "02", name: "Chapter 2", description: "English Chapter 2 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+              { id: "eng1_ch3", number: "03", name: "Chapter 3", description: "English Chapter 3 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+              { id: "eng1_ch4", number: "04", name: "Chapter 4", description: "English Chapter 4 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" }
             ],
             materials: []
           },
           {
             id: "language_2_1",
-            name: "Language 2: Kannada/Hindi/Additional English",
-            description: "Second language literature, regional grammar models, essays, and regional syntax studies.",
-            modulesCount: 1,
-            completedModules: 1,
+            name: "Language 2",
+            description: "Choose Kannada, Hindi, or Additional English.",
+            modulesCount: 3,
+            completedModules: 0,
             difficulty: "Core",
             icon: "Languages",
             bgColor: "bg-purple-50 text-purple-800",
             textColor: "text-purple-800",
-            progressPercent: 100,
+            progressPercent: 0,
+            contentMode: "languages",
+            textbooks: [],
             units: [
-              { id: "lang2_u1", number: "01", name: "Language 2 Curriculum", description: "State approved text chapters, grammatical systems, prose essays, and translation grids.", masteryPercent: 100, status: "Mastered", topics: ["Prose & Drama", "Grammar Models", "Translation Exercises", "Creative Writing"] }
+              {
+                id: "lang2_kannada",
+                number: "01",
+                name: "Kannada",
+                description: "Kannada textbook and chapter materials.",
+                masteryPercent: 0,
+                status: "Locked",
+                kind: "language",
+                children: [
+                  { id: "kan_ch1", number: "01", name: "Chapter 1", description: "Kannada Chapter 1 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "kan_ch2", number: "02", name: "Chapter 2", description: "Kannada Chapter 2 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "kan_ch3", number: "03", name: "Chapter 3", description: "Kannada Chapter 3 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "kan_ch4", number: "04", name: "Chapter 4", description: "Kannada Chapter 4 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" }
+                ]
+              },
+              {
+                id: "lang2_hindi",
+                number: "02",
+                name: "Hindi",
+                description: "Hindi textbook and chapter materials.",
+                masteryPercent: 0,
+                status: "Locked",
+                kind: "language",
+                children: [
+                  { id: "hin_ch1", number: "01", name: "Chapter 1", description: "Hindi Chapter 1 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "hin_ch2", number: "02", name: "Chapter 2", description: "Hindi Chapter 2 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "hin_ch3", number: "03", name: "Chapter 3", description: "Hindi Chapter 3 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "hin_ch4", number: "04", name: "Chapter 4", description: "Hindi Chapter 4 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" }
+                ]
+              },
+              {
+                id: "lang2_additional_english",
+                number: "03",
+                name: "Additional English",
+                description: "Additional English textbook and chapter materials.",
+                masteryPercent: 0,
+                status: "Locked",
+                kind: "language",
+                children: [
+                  { id: "addeng_ch1", number: "01", name: "Chapter 1", description: "Additional English Chapter 1 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "addeng_ch2", number: "02", name: "Chapter 2", description: "Additional English Chapter 2 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "addeng_ch3", number: "03", name: "Chapter 3", description: "Additional English Chapter 3 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" },
+                  { id: "addeng_ch4", number: "04", name: "Chapter 4", description: "Additional English Chapter 4 study materials.", masteryPercent: 0, status: "Locked", kind: "chapter" }
+                ]
+              }
             ],
             materials: []
           },
           {
             id: "lab_sem1",
             name: "Practical Labs (Sem 1)",
-            description: "Practical files, execution scripts, and viva records for computer architecture, problem-solving, and office automation.",
+            description: "Semester 1 practical manuals, outputs, and viva questions.",
             modulesCount: 3,
-            completedModules: 2,
+            completedModules: 0,
             difficulty: "Core",
             icon: "Terminal",
             bgColor: "bg-emerald-50 text-emerald-800",
             textColor: "text-emerald-800",
-            progressPercent: 66,
+            progressPercent: 0,
             isLab: true,
+            contentMode: "labs",
+            textbooks: [],
             units: [
-              { id: "lab_ca", number: "01", name: "Computer Architecture Lab", description: "Design combinational circuits using digital gates simulators and assemble micro-logic scripts.", masteryPercent: 100, status: "Mastered", topics: ["AND/OR/NOT Gates", "Full Adder on Breadboard", "8085 Simulators"] },
-              { id: "lab_ps", number: "02", name: "Problem Solving Lab", description: "Write, compile, test, and debug structured computational programs using GCC compiler and C.", masteryPercent: 100, status: "Mastered", topics: ["Conditionals Lab", "Array Search Algorithms", "Pointer Swapping"] },
-              { id: "lab_omt", number: "03", name: "Office Automation Tool (OMT)", description: "Leverage standard processors, slide decks, database files, and dynamic sheets calculation.", masteryPercent: 0, status: "In Progress", topics: ["Spreadsheets Formula", "Document Styles", "Mail Merge", "Macro Scripts"] }
+              {
+                id: "lab_ca",
+                number: "01",
+                name: "Computer Architecture Lab",
+                description: "Computer Architecture practical resources.",
+                masteryPercent: 0,
+                status: "Locked",
+                kind: "lab",
+                children: [
+                  { id: "lab_ca_manual", number: "01", name: "Manual", description: "Computer Architecture lab manual.", masteryPercent: 0, status: "Locked", kind: "lab-section" },
+                  { id: "lab_ca_outputs", number: "02", name: "Outputs", description: "Computer Architecture lab outputs.", masteryPercent: 0, status: "Locked", kind: "lab-section" },
+                  { id: "lab_ca_viva", number: "03", name: "Viva Questions", description: "Computer Architecture viva questions.", masteryPercent: 0, status: "Locked", kind: "lab-section" }
+                ]
+              },
+              {
+                id: "lab_ps",
+                number: "02",
+                name: "Problem Solving Lab",
+                description: "Problem Solving practical resources.",
+                masteryPercent: 0,
+                status: "Locked",
+                kind: "lab",
+                children: [
+                  { id: "lab_ps_manual", number: "01", name: "Manual", description: "Problem Solving lab manual.", masteryPercent: 0, status: "Locked", kind: "lab-section" },
+                  { id: "lab_ps_outputs", number: "02", name: "Outputs", description: "Problem Solving program outputs.", masteryPercent: 0, status: "Locked", kind: "lab-section" },
+                  { id: "lab_ps_viva", number: "03", name: "Viva Questions", description: "Problem Solving viva questions.", masteryPercent: 0, status: "Locked", kind: "lab-section" }
+                ]
+              },
+              {
+                id: "lab_omt",
+                number: "03",
+                name: "Office Automation Tool (OMT)",
+                description: "Office Automation Tool practical resources.",
+                masteryPercent: 0,
+                status: "Locked",
+                kind: "lab",
+                children: [
+                  { id: "lab_omt_manual", number: "01", name: "Manual", description: "OMT practical manual.", masteryPercent: 0, status: "Locked", kind: "lab-section" },
+                  { id: "lab_omt_outputs", number: "02", name: "Outputs", description: "OMT practical outputs.", masteryPercent: 0, status: "Locked", kind: "lab-section" },
+                  { id: "lab_omt_viva", number: "03", name: "Viva Questions", description: "OMT viva questions.", masteryPercent: 0, status: "Locked", kind: "lab-section" }
+                ]
+              }
             ],
-            materials: [
-              { id: "mat_lab1", name: "C Language Lab Manual Completed.pdf", size: "3.2 MB", addedTime: "Seniors Approved", type: "pdf", isBookmarked: false, details: "Full set of 15 standard lab programs including bubble sort, matrix transpose, and pointer structures." }
-            ]
+            materials: []
           }
         ]
       },

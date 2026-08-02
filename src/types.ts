@@ -14,6 +14,8 @@ export interface YouTubeReference {
   duration?: string;
 }
 
+export type UnitKind = "unit" | "chapter" | "language" | "lab" | "lab-section";
+
 export interface Unit {
   id: string;
   number: string;
@@ -25,6 +27,8 @@ export interface Unit {
   materials?: StudyMaterial[];
   importantQuestions?: ImportantQuestion[];
   youtubeLinks?: YouTubeReference[];
+  kind?: UnitKind;
+  children?: Unit[];
 }
 
 export interface StudyMaterial {
@@ -58,6 +62,8 @@ export interface Subject {
   progressPercent: number;
   units: Unit[];
   materials: StudyMaterial[];
+  textbooks?: StudyMaterial[];
+  contentMode?: "units" | "chapters" | "languages" | "labs";
   isLab?: boolean;
 }
 
